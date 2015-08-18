@@ -1,12 +1,12 @@
 module Tap (TapBox,tapbox) where
 import Html exposing (Attribute, text, Html, div)
-import Html.Events exposing (onWithOptions, Options)
+import Html.Events 
 import Json.Decode as Json
 import Debug
 
 type alias TapBox a = {
-        onClick : (a -> List Attribute),
-        onClickWithOptions : (Options -> a -> List Attribute),
+        on: ((TapModel a -> Bool) -> a -> List Attribute),
+        onWithOptions : (Html.Events.Options -> (TapModel a -> Bool) -> a -> List Attribute),
         signal : Signal a
     }
 
@@ -14,28 +14,39 @@ tapbox : a -> TapBox a
 tapbox noop = 
     let mailbox = touches noop
 
-        onClickWithOptions options msg =
+        onWithOptions options hle msg =
             let 
                 helper event x = 
-                    onWithOptions event options Json.value (\_ -> Signal.message mailbox.address x)
+                    Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
+                        (Signal.forwardTo mailbox.address Just) 
+                    x)
             in
-                [helper "mousedown" (Start msg)
-                ,helper "mousemove" (Cancel msg)
-                ,helper "touchleave" (Cancel msg)
-                ,helper "mouseup" (End msg)
+                [helper "touchstart" (((Touch, Start), hle), msg)
+                ,helper "touchmove" (((Touch, Move), hle), msg)
+                ,helper "touchleave" (((Touch, Leave), hle), msg)
+                ,helper "touchend" (((Touch, End), hle), msg)
+                ,helper "mousedown" (((Mouse, Start), hle), msg)
+                ,helper "mousemove" (((Mouse, Move), hle), msg)
+                ,helper "mouseout" (((Mouse, Leave), hle), msg)
+                ,helper "mouseup" (((Mouse, End), hle), msg)
                 ]
 
     in 
         {
-            onClickWithOptions = onClickWithOptions,
-            onClick = onClickWithOptions {stopPropagation = False, preventDefault = False},
-            signal = Signal.filterMap touchAction noop (Signal.foldp touchesToAction init mailbox.signal)
+            onWithOptions = onWithOptions,
+            on = onWithOptions {stopPropagation = False, preventDefault = False},
+            signal = 
+                Signal.filterMap parseAction noop 
+                    <| Signal.map parseInput
+                    <| Signal.foldp updateModel init mailbox.signal
         }
 
+type Device = Mouse | Touch
+type Action = Start | End | Leave | Move
 
-touches : a -> Signal.Mailbox (Tap a)
+touches : a -> Signal.Mailbox (Maybe (((Device,Action), (TapModel a -> Bool)), a))
 touches a =
-    Signal.mailbox NoTap
+    Signal.mailbox Nothing
 
 init : TapModel a
 init = {
@@ -48,25 +59,15 @@ type alias TapModel a = {
     carryOut : Bool
     }
 
+updateModel : Maybe (((Device, Action), (TapModel a -> Bool)), a) -> TapModel a -> TapModel a
+updateModel tap model =
+    model
 
-type Tap a = Start a | End a | Cancel a | NoTap
+parseInput : TapModel a -> TapModel a
+parseInput model = 
+    model
 
-touchesToAction : Tap a -> TapModel a -> TapModel a
-touchesToAction tap model =
-    case (Debug.log "tap" tap) of 
-        NoTap -> model
-        Start act -> 
-            { model | pending <- Just act, carryOut <- False }
-        End act ->
-            if model.pending == Just act then 
-                { model | carryOut <- True }
-            else
-                init 
-        Cancel act ->
-            init 
-
-touchAction : TapModel a -> Maybe a
-touchAction model =
-    if model.carryOut then (Debug.log "touchAction" model.pending)
-    else (Debug.log "touchAction" Nothing)
+parseAction : TapModel a -> Maybe a
+parseAction model =
+    model.pending
 
