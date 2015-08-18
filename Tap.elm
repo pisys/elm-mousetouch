@@ -1,12 +1,13 @@
-module Tap (TapBox,tapbox) where
+module Tap (TapBox,tapbox,click) where
 import Html exposing (Attribute, text, Html, div)
 import Html.Events 
 import Json.Decode as Json
 import Debug
+import Time
 
 type alias TapBox a = {
-        on: ((TapModel a -> Bool) -> a -> List Attribute),
-        onWithOptions : (Html.Events.Options -> (TapModel a -> Bool) -> a -> List Attribute),
+        on: ((PastEvents -> Bool) -> a -> List Attribute),
+        onWithOptions : (Html.Events.Options -> (PastEvents -> Bool) -> a -> List Attribute),
         signal : Signal a
     }
 
@@ -38,36 +39,91 @@ tapbox noop =
             signal = 
                 Signal.filterMap parseAction noop 
                     <| Signal.map parseInput
-                    <| Signal.foldp updateModel init mailbox.signal
+                    <| Signal.foldp updateModel init 
+                    <| Time.timestamp mailbox.signal
         }
 
 type Device = Mouse | Touch
 type Action = Start | End | Leave | Move
 
-touches : a -> Signal.Mailbox (Maybe (((Device,Action), (TapModel a -> Bool)), a))
+touches : a -> Signal.Mailbox (Maybe (((Device,Action), (PastEvents -> Bool)), a))
 touches a =
     Signal.mailbox Nothing
 
 init : TapModel a
 init = {
-    pending = Nothing,
-    carryOut = False
+    pastEvents = [],
+    success = Nothing
     }
 
-type alias TapModel a = {
-    pending : Maybe a,
-    carryOut : Bool
+type alias Event = ((Device, Action), Time.Time)
+
+type alias PastEvents = List Event
+
+type alias TapModel a =
+    { pastEvents : PastEvents
+    , success : Maybe ((PastEvents -> Bool), a)
     }
 
-updateModel : Maybe (((Device, Action), (TapModel a -> Bool)), a) -> TapModel a -> TapModel a
+updateModel : (Time.Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) -> TapModel a -> TapModel a
 updateModel tap model =
-    model
+    let t = fst tap
+        e = snd tap
+    in
+    case e of 
+        Nothing -> model
+        Just ev -> 
+            let newEvent = (fst (fst ev), t)
+                success = (snd (fst ev), snd ev)
+
+                -- throw away events which are older than one second
+                newPastEvents = fst (List.partition (\(_,t') -> t' > (t - Time.second)) model.pastEvents)
+            in 
+               { model | pastEvents <- (Debug.log "newEvent" newEvent ) :: (Debug.log "pastEvents" newPastEvents)
+                       , success <- Just success
+               }
 
 parseInput : TapModel a -> TapModel a
 parseInput model = 
-    model
+    { model | pastEvents <- (Debug.log "after twoStarts" (twoStarts model.pastEvents))}
+
+-- reduce two consecutive mouse/touch start events to one
+twoStarts : PastEvents -> PastEvents
+twoStarts list =
+    let head = List.take 2 list
+        tail = List.drop 2 list
+    in
+       if List.all (\((_,a),t) -> a == Start) head
+          then (List.take 1 head) `List.append` tail
+          else list
 
 parseAction : TapModel a -> Maybe a
 parseAction model =
-    model.pending
+    case model.success of
+        Nothing -> Nothing
+        Just s -> 
+            if (Debug.log "parseAction, success" ((fst s) model.pastEvents))
+               then Just (snd s)
+               else Nothing
+
+click : PastEvents -> Bool
+click list =
+    let head = Debug.log "click head" (List.take 2 list)
+        first = Debug.log "click first" (List.head head)
+        second = Debug.log "click second" (List.tail head)
+    in
+       case second of
+           Nothing -> False
+           Just l -> 
+               case List.head l of
+                   Nothing -> False
+                   Just s ->
+                       case first of 
+                           Nothing -> False
+                           Just f ->
+                               fst(fst(f)) == fst(fst(s)) -- comparing Devices
+                               && snd(fst(f)) == End -- comparing Actions
+                               && snd(fst(s)) == Start
+                               && (snd f) < ((snd s) + (300*Time.millisecond))
+
 
