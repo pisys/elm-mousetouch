@@ -77,11 +77,15 @@ updateModel tap model =
                 success = (snd (fst ev), snd ev)
 
                 -- throw away events which are older than one second
-                newPastEvents = fst (List.partition (\(_,t') -> t' > (t - Time.second)) model.pastEvents)
+                newPastEvents = throwAwaySince model.pastEvents t Time.second
             in 
                { model | pastEvents <- (Debug.log "newEvent" newEvent ) :: (Debug.log "pastEvents" newPastEvents)
                        , success <- Just success
                }
+
+throwAwaySince : PastEvents -> Time.Time -> Time.Time -> PastEvents
+throwAwaySince list now since =
+    fst (List.partition (\(_,t') -> t' > (now - since)) list)
 
 parseInput : TapModel a -> TapModel a
 parseInput model = 
