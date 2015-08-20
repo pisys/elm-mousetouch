@@ -229,8 +229,15 @@ click range recent events =
             <| find (AtMost 1) (regex
                     <| "^"
                     ++ buildRegex [Touch] [End] True
-                    ++ dontremember (buildRegex [Mouse,Touch] [Move] False) 
-                    ++ "{0,5}"
+                    ++ dontremember (
+                            (dontremember 
+                                (buildRegex [Touch] [Move] False) 
+                            )
+                            ++ "|" ++
+                            (dontremember
+                                (buildRegex [Mouse] [Start,End,Leave,Move] False)
+                            )
+                        ) ++ "{0,5}"
                     ++ buildRegex [Touch] [Start] True
                 )
                 events
