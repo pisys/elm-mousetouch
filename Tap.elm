@@ -13,8 +13,8 @@ type alias TapBox a = {
         signal : Signal a
     }
 
-tapbox : a -> TapBox a
-tapbox noop = 
+tapbox : a -> Time -> TapBox a
+tapbox noop prune = 
     let mailbox = touches noop
 
         onWithOptions options hle msg =
@@ -41,7 +41,7 @@ tapbox noop =
             signal = 
                 Signal.filterMap parseAction noop 
                     <| Signal.map parseInput
-                    <| Signal.foldp updateModel init 
+                    <| Signal.foldp (updateModel prune) init
                     <| timestamp mailbox.signal
         }
 
@@ -69,23 +69,58 @@ type alias TapModel a =
     , timebase : Time
     }
 
-updateModel : (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) -> TapModel a -> TapModel a
-updateModel tap model =
+updateModel : Time 
+    -> (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) 
+    -> TapModel a -> TapModel a
+updateModel prune tap model =
     let t = fst tap
         e = snd tap
     in
     case e of 
         Nothing -> model
         Just ev -> 
-            let newEvent = eventToString (fst (fst ev), t)
+            let 
+                newTimebase = if (model.timebase + prune) < (t - prune)
+                                 then t - prune
+                                 else model.timebase
+
+                newEventTime = t - (Debug.log "newTimebase" newTimebase)
+
+                newEvent = 
+                    Debug.log "newEvent" (
+                        eventToString (fst (fst ev), newEventTime)
+                    )
                 success = (snd (fst ev), snd ev)
 
+                pruneBelow = Debug.log "pruneBelow" (t - model.timebase - prune)
+
                 -- throw away events which are older than one second
-                newPastEvents = throwAwaySince second <| Debug.log "adjustTime" (adjustTime t model.pastEvents)
+                newPastEvents = adjustPastEvents (newTimebase - model.timebase) 
+                    <| pruneEvents pruneBelow model.pastEvents
             in 
-               { model | pastEvents <- (Debug.log "newEvent" newEvent ) ++ (Debug.log "pastEvents" newPastEvents)
+               { model | pastEvents <- newEvent ++ (Debug.log "pastEvents" newPastEvents)
                        , success <- Just success
+                       , timebase <- newTimebase
                }
+
+pruneEvents : Time -> PastEvents -> PastEvents
+pruneEvents pruneBelow events =
+    if pruneBelow <= 0 then events
+       else replace All (regex regexAnyEvent) (pruneEvent pruneBelow) events
+
+pruneEvent : Time -> Match -> String
+pruneEvent pruneBelow match =
+    let event = match.match
+    in
+        case List.head match.submatches of
+            Nothing -> ""
+            Just h -> case h of
+                Nothing -> ""
+                Just t -> case String.toFloat t of
+                    Err x -> ""
+                    Ok time -> if time < pruneBelow
+                                  then ""
+                                  else event
 
 eventToString : Event -> String
 eventToString ((device,action),time) =
@@ -125,25 +160,51 @@ keepBefore since match past =
     , cum = cum
     }
 
-adjustTime : Time -> PastEvents -> PastEvents
-adjustTime now events =
-    replace (AtMost 1) (regex "\\d+") (\{match} -> replaceByDiff now (Debug.log "adjustTime, match" match)) events
+adjustPastEvents : Time -> PastEvents -> PastEvents
+adjustPastEvents diffTimebase events =
+    if diffTimebase == 0 then events
+       else replace All 
+        (regex (Debug.log "adjustPastEvents, regexAnyEvent" regexDiff) )
+        (adjustTime diffTimebase) 
+        (Debug.log "adjustPastEvents, events" events)
 
-replaceByDiff : Time -> String -> String
-replaceByDiff now time =
-    case String.toFloat (Debug.log "replacebydiff, time =" time) of
+adjustTime: Time -> Match -> String
+adjustTime diff match =
+    let time = match.match
+    in case String.toFloat time of
+        Err x -> match.match
+        Ok t -> toString (t-diff)
+
+
+subDiffOrRemove : Time -> Time -> String -> List (Maybe String) -> String
+subDiffOrRemove diffTimebase pruneLevel event matches =
+    case List.head matches of
+        Nothing -> ""
+        Just s -> case s of
+            Nothing -> ""
+            Just d -> case String.toFloat (Debug.log "subdiff, time =" d) of
+                Err x -> ""
+                Ok t -> if t < diffTimebase
+                    then ""
+                    else replace (AtMost 1) (regex regexDiff) 
+                        (\{match} -> subDiff match diffTimebase) event
+
+subDiff : String -> Time -> String
+subDiff t diff =
+    case String.toFloat t of
         Err x -> "0"
-        Ok t -> toString (now-t)
+        Ok ttl -> toString (ttl-diff)
 
-buildRegexFromString : String -> String -> String
-buildRegexFromString device action =
-    device ++ action ++ "(\\d+)"
+buildRegexFromString : String -> String -> String -> String
+buildRegexFromString device action ttl =
+    device ++ action ++ ttl
         
-buildRegex : List Device -> List Action -> String
-buildRegex device action =
-        (buildRegexDevice device)
+buildRegex : List Device -> List Action -> Bool -> String
+buildRegex device action ttlRemember =
+    let rem = if ttlRemember then remember else dontremember
+    in (buildRegexDevice device)
         ++ (buildRegexAction action)
-        ++ "(\\d+)"
+        ++ (rem regexDiff)
 
 buildRegexDevice : List Device -> String
 buildRegexDevice device =
@@ -161,7 +222,13 @@ buildRegexAction action =
 
 
 regexAnyEvent : String
-regexAnyEvent = buildRegexFromString (dontremember regexAnyDevice) (dontremember regexAnyAction)
+regexAnyEvent = buildRegexFromString 
+    regexAnyDevice
+    regexAnyAction 
+    (remember regexDiff)
+
+regexDiff : String
+regexDiff = "\\d+"
 
 dontremember : String -> String
 dontremember string = "(?:"++string++")"
@@ -170,10 +237,10 @@ remember : String -> String
 remember string = "("++string++")"
 
 regexAnyMouseEvent : String
-regexAnyMouseEvent = buildRegex [Mouse] [Start,End,Leave,Move]
+regexAnyMouseEvent = buildRegex [Mouse] [Start,End,Leave,Move] True
 
 regexAnyTouchEvent : String
-regexAnyTouchEvent = buildRegex [Touch] [Start,End,Leave,Move]
+regexAnyTouchEvent = buildRegex [Touch] [Start,End,Leave,Move] True
 
 regexAnyAction : String
 regexAnyAction = buildRegexAction [Start,End,Leave,Move] 
@@ -190,7 +257,7 @@ parseInput model =
 twoStarts : PastEvents -> PastEvents
 twoStarts events =
     replace (AtMost 1) (
-        "(" ++ (buildRegex [Mouse,Touch] [Start]) ++ "){2}" |> regex
+        "(" ++ (buildRegex [Mouse,Touch] [Start] True) ++ "){2}" |> regex
     ) (\m -> (Debug.log "match" m).match ) events
 
 parseAction : TapModel a -> Maybe a
@@ -207,15 +274,15 @@ click range recent events =
     let matchTouch = Debug.log "touchclick head" 
             <| find (AtMost 1) (regex
                     <| "^"
-                    ++ buildRegex [Touch] [End] 
-                    ++ buildRegex [Touch] [Start]
+                    ++ buildRegex [Touch] [End] True
+                    ++ buildRegex [Touch] [Start] True
                 )
                 events
         matchMouse = Debug.log "mouseclick head" 
             <| find (AtMost 1) (regex
                     <| "^"
-                    ++ buildRegex [Mouse] [End]
-                    ++ buildRegex [Mouse] [Start]
+                    ++ buildRegex [Mouse] [End] True
+                    ++ buildRegex [Mouse] [Start] True
                 )
                 events
         diff = 
@@ -257,7 +324,11 @@ click range recent events =
         
 getLast : String -> PastEvents -> Maybe Time
 getLast device events =
-    let es = find All (regex <| buildRegexFromString (remember regexAnyDevice) (dontremember regexAnyAction)) events
+    let es = find All (regex <| buildRegexFromString 
+                                    (remember regexAnyDevice) 
+                                    (dontremember regexAnyAction)
+                                    (remember regexDiff)
+                      ) events
             |> List.drop 1 -- drop the first event since it contains the absolute timestamp
     in case List.foldl (accumDiffs device) (Just {cum=0, stop=False}) (Debug.log "getLast events" es) of
         Nothing -> Nothing
