@@ -1,4 +1,4 @@
-module Tap (TapBox, tapbox, click', click, start', start) where
+module TapBox (TapBox, tapbox, click', click, start', start) where
 import Html exposing (Attribute, text, Html, div)
 import Html.Events 
 import Json.Decode as Json
