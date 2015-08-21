@@ -1,18 +1,289 @@
-module Tap (TapBox,tapbox,click, normalclick, start) where
+module Tap (TapBox, tapbox, click', click, start', start) where
 import Html exposing (Attribute, text, Html, div)
 import Html.Events 
 import Json.Decode as Json
-import Debug
 import Time exposing (Time, millisecond, timestamp, second)
 import Regex exposing (..)
 import String
 
-type alias TapBox a = {
-        on: ((PastEvents -> Bool) -> a -> List Attribute),
-        onWithOptions : (Html.Events.Options -> (PastEvents -> Bool) -> a -> List Attribute),
-        signal : Signal a
+{-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms them into
+"high-level" clicks, hiding the user input method of the device (mouse, touch or
+both).
+
+Low-level events are mousestart, mouseend, mousemove, mouseout, touchstart,
+touchend, touchmove and touchleave.
+
+High-level events are defined as user provided success functions which evaluate
+past low-level events.
+-}
+
+type Device = Mouse | Touch
+type Action = Start | End | Leave | Move
+
+type alias Event = ((Device, Action), Time)
+
+{-| Past events are stored in a String and accessed with regular expressions.
+-}
+type alias PastEvents = String
+
+{-| TapModel represents the past of mouse/touch events. Stores them relative to
+`timebase`. Associates a success function with a user defined value.
+-}
+type alias TapModel a =
+    { pastEvents : PastEvents
+    , success : Maybe ((PastEvents -> Bool), a)
+    , timebase : Time
     }
 
+init : TapModel a
+init = {
+    pastEvents = "",
+    success = Nothing,
+    timebase = 0
+    }
+
+{-| Update the TapModel with the incoming event.
+* Prune events older than `prune`
+* Reset timebase and adjust past events after a time of `prune`
+-}
+update : Time -> (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) 
+    -> TapModel a -> TapModel a
+update prune event model =
+    let t = fst event
+        e = snd event
+    in
+    case e of 
+        Nothing -> model
+        Just ev -> 
+            let 
+                newTimebase = if (model.timebase + prune) < (t - prune)
+                                 then t - prune
+                                 else model.timebase
+
+                newEventTime = t - newTimebase
+
+                newEvent = eventToString (fst (fst ev), newEventTime)
+                success = (snd (fst ev), snd ev)
+
+                pruneBelow = t - model.timebase - prune
+
+                newPastEvents = adjustPastEvents (newTimebase - model.timebase) 
+                    <| pruneEvents pruneBelow model.pastEvents
+            in 
+               { model | pastEvents <- newEvent ++ newPastEvents
+                       , success <- Just success
+                       , timebase <- newTimebase
+               }
+
+{-| Prune past events below `pruneBelow`.
+-}
+pruneEvents : Time -> PastEvents -> PastEvents
+pruneEvents pruneBelow events =
+    if pruneBelow <= 0 then events
+       else replace All (regex regexAnyEvent) (pruneEvent pruneBelow) events
+
+{-| Prune an event if its timestamp is below `pruneBelow`.
+-}
+pruneEvent : Time -> Match -> String
+pruneEvent pruneBelow match =
+    let event = match.match
+    in
+        case List.head match.submatches of
+            Nothing -> ""
+            Just h -> case h of
+                Nothing -> ""
+                Just t -> case String.toFloat t of
+                    Err x -> ""
+                    Ok time -> if time < pruneBelow
+                                  then ""
+                                  else event
+
+{-| Adjust past events to a new timebase.
+-}
+adjustPastEvents : Time -> PastEvents -> PastEvents
+adjustPastEvents diffTimebase events =
+    if diffTimebase == 0 then events
+       else replace All 
+        (regex regexDiff )
+        (adjustTime diffTimebase) 
+        events
+
+{-| Subtract `diff` from the times in a match of timestamps.
+-}
+adjustTime: Time -> Match -> String
+adjustTime diff match =
+    let time = match.match
+    in case String.toFloat time of
+        Err x -> match.match
+        Ok t -> toString (t-diff)
+
+{-| Give the String representation of an Event for storing in `PastEvents`.
+-}
+eventToString : Event -> String
+eventToString ((device,action),time) =
+    (deviceToString device) ++ (actionToString action) ++ (toString time)
+
+{-| Give the String representation of a Device type for storing in `PastEvents`.
+-}
+deviceToString : Device -> String
+deviceToString device =
+    toString device |> String.left 1 
+
+{-| Give the String representation of an Action type for storing in `PastEvents`
+-}
+actionToString : Action -> String
+actionToString action =
+    toString action |> String.left 1 |> String.toLower 
+
+{-| Various regex utility functions.
+-}
+buildRegexFromString : String -> String -> String -> String
+buildRegexFromString device action ttl =
+    device ++ action ++ ttl
+        
+{-| Build the regular expression for matching one or more Device types and one
+or more Action types. 
+-} 
+buildRegex : List Device -> List Action -> Bool -> String
+buildRegex device action ttlRemember =
+    let rem = if ttlRemember then remember else dontremember
+    in (buildRegexDevice device)
+        ++ (buildRegexAction action)
+        ++ (rem regexDiff)
+
+{-| Build the regular expression for matching one or more Device types. 
+-} 
+buildRegexDevice : List Device -> String
+buildRegexDevice device =
+    let b = if List.length device > 1 then ("[","]") else ("","")
+    in (fst b) 
+        ++ (List.foldl (\d -> \dd -> dd ++ deviceToString d) "" device) 
+        ++ (snd b) 
+
+{-| Build the regular expression for matching one or more Action types. 
+-} 
+buildRegexAction : List Action -> String
+buildRegexAction action =
+    let b = if List.length action > 1 then ("[","]") else ("","")
+    in (fst b)
+        ++ (List.foldl (\a -> \aa -> aa ++ actionToString a) "" action) 
+        ++ (snd b) 
+
+regexAnyEvent : String
+regexAnyEvent = buildRegexFromString 
+    regexAnyDevice
+    regexAnyAction 
+    (remember regexDiff)
+
+regexDiff : String
+regexDiff = "\\d+"
+
+{-| Wrap a regular expression in (?:x) so it is treated as a group but not
+remembered as a submatch. 
+ -}
+dontremember : String -> String
+dontremember string = "(?:"++string++")"
+
+{-| Wrap a regular expression in (x) so it is remembered as a submatch. 
+ -}
+remember : String -> String
+remember string = "("++string++")"
+
+regexAnyMouseEvent : String
+regexAnyMouseEvent = buildRegex [Mouse] [Start,End,Leave,Move] True
+
+regexAnyTouchEvent : String
+regexAnyTouchEvent = buildRegex [Touch] [Start,End,Leave,Move] True
+
+regexAnyAction : String
+regexAnyAction = buildRegexAction [Start,End,Leave,Move] 
+
+regexAnyDevice : String
+regexAnyDevice = buildRegexDevice [Mouse,Touch]
+
+{-| Apply the success function to the past events.
+-}
+parseAction : TapModel a -> Maybe a
+parseAction model =
+    case model.success of
+        Nothing -> Nothing
+        Just s -> 
+            if (fst s) model.pastEvents
+               then Just (snd s)
+               else Nothing
+
+{-| Subtract two Maybe Times. 
+-}
+diff : Maybe Time -> Maybe Time -> Maybe Time
+diff t1 t2 =
+    case t1 of
+       Nothing -> Nothing
+       Just t1 -> case t2 of
+           Nothing -> Nothing
+           Just t2 -> Just (t1-t2)
+
+{-| Get the String from the `position`'th submatch of the first of given 
+Regex.find matches.
+-}
+getSubmatch : List Match -> Int -> Maybe String
+getSubmatch matches position =
+    let submatch = case List.head matches of
+            Nothing -> Nothing
+            Just m -> case List.head <| List.drop (position-1) m.submatches of
+                Nothing -> Nothing
+                Just h -> h
+    in submatch
+
+{-| `getSubmatch` and turn it into Time.
+-}
+getTime : List Match -> Int -> Maybe Time
+getTime matches position =
+    case getSubmatch matches position of
+        Nothing -> Nothing
+        Just d -> case String.toFloat d of
+            Err x -> Nothing
+            Ok di -> Just di
+
+{-| Get the time of the last occurrence of any `device` event.
+-}
+getLast : Device -> PastEvents -> Maybe Time
+getLast device events =
+    let es = find (AtMost 1) (
+                    regex <| buildRegex [device] [Start,End,Move,Leave] True
+                ) events
+    in getTime es 1
+
+-- SIGNALS
+
+{-| A Mailbox wrapping the user defined action in Event.
+-}
+touches : a -> Signal.Mailbox (Maybe (((Device,Action), (PastEvents -> Bool)), a))
+touches a =
+    Signal.mailbox Nothing
+
+-- API
+
+{-| TapBox functions like a Signal.Mailbox. The difference is that it exposes
+event handlers instead of an address. `signal` yields a Signal of user defined
+type given the result of the success function (PastEvents -> Bool).
+
+Event handlers wrap Html.Events.onWithOptions.
+-}
+type alias TapBox a = {
+        on: ((PastEvents -> Bool) -> a -> List Attribute)
+        , onWithOptions : 
+            (Html.Events.Options -> (PastEvents -> Bool) -> a -> List Attribute)
+        , signal : Signal a
+    }
+
+{-| Construct a TapBox given a default value of user defined type and the time
+events reside in the `TapModel.pastEvents` buffer before they are pruned. 
+
+Creates an internal Signal.Mailbox and wires its address with mouse and touch
+event handlers. The signal is folded into a TapModel which represents the past
+of the events within `prune` time. On any event the success function is applied
+to the past events. 
+-}
 tapbox : a -> Time -> TapBox a
 tapbox noop prune = 
     let mailbox = touches noop
@@ -40,216 +311,48 @@ tapbox noop prune =
             on = onWithOptions {stopPropagation = False, preventDefault = False},
             signal = 
                 Signal.filterMap parseAction noop 
-                    <| Signal.map parseInput
-                    <| Signal.foldp (updateModel prune) init
+                    <| Signal.foldp (update prune) init
                     <| timestamp mailbox.signal
         }
 
-type Device = Mouse | Touch
-type Action = Start | End | Leave | Move
+{-| A click success function which has to parametrized with the `maxRange`
+between the start and end event (ie. mousedown/mouseup or touchstart/touchend),
+and `minLast`, the minimum time of last occurence of a touch event in case of a
+mouse event. This is to prevent virtual mouse events which are triggered approx.
+300ms after a touch event on most touch screens.
 
-touches : a -> Signal.Mailbox (Maybe (((Device,Action), (PastEvents -> Bool)), a))
-touches a =
-    Signal.mailbox Nothing
+Click searches past events for a pattern of mouseend (mousemove{0,5}) mousestart
+or touchend (touchmove|mouseevent){0|5} touchstart. The latter ignores virtual 
+mouse events intermingling with a fast series of touches.
+-}
 
-init : TapModel a
-init = {
-    pastEvents = "",
-    success = Nothing,
-    timebase = 0
-    }
-
-type alias Event = ((Device, Action), Time)
-
-type alias PastEvents = String
-
-type alias TapModel a =
-    { pastEvents : PastEvents
-    , success : Maybe ((PastEvents -> Bool), a)
-    , timebase : Time
-    }
-
-updateModel : Time 
-    -> (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) 
-    -> TapModel a -> TapModel a
-updateModel prune tap model =
-    let t = fst tap
-        e = snd tap
-    in
-    case e of 
-        Nothing -> model
-        Just ev -> 
-            let 
-                newTimebase = if (model.timebase + prune) < (t - prune)
-                                 then t - prune
-                                 else model.timebase
-
-                newEventTime = t - newTimebase
-
-                newEvent = 
-                    Debug.log "newEvent" (
-                        eventToString (fst (fst ev), newEventTime)
-                    )
-                success = (snd (fst ev), Debug.log "action" (snd ev))
-
-                pruneBelow = t - model.timebase - prune
-
-                newPastEvents = adjustPastEvents (newTimebase - model.timebase) 
-                    <| pruneEvents pruneBelow model.pastEvents
-            in 
-               { model | pastEvents <- newEvent ++ newPastEvents
-                       , success <- Just success
-                       , timebase <- newTimebase
-               }
-
-pruneEvents : Time -> PastEvents -> PastEvents
-pruneEvents pruneBelow events =
-    if pruneBelow <= 0 then events
-       else replace All (regex regexAnyEvent) (pruneEvent pruneBelow) events
-
-pruneEvent : Time -> Match -> String
-pruneEvent pruneBelow match =
-    let event = match.match
-    in
-        case List.head match.submatches of
-            Nothing -> ""
-            Just h -> case h of
-                Nothing -> ""
-                Just t -> case String.toFloat t of
-                    Err x -> ""
-                    Ok time -> if time < pruneBelow
-                                  then ""
-                                  else event
-
-adjustPastEvents : Time -> PastEvents -> PastEvents
-adjustPastEvents diffTimebase events =
-    if diffTimebase == 0 then events
-       else replace All 
-        (regex regexDiff )
-        (adjustTime diffTimebase) 
-        events
-
-adjustTime: Time -> Match -> String
-adjustTime diff match =
-    let time = match.match
-    in case String.toFloat time of
-        Err x -> match.match
-        Ok t -> toString (t-diff)
-
-eventToString : Event -> String
-eventToString ((device,action),time) =
-    (deviceToString device) ++ (actionToString action) ++ (toString time)
-
-deviceToString : Device -> String
-deviceToString device =
-    toString device |> String.left 1 
-
-actionToString : Action -> String
-actionToString action =
-    toString action |> String.left 1 |> String.toLower 
-
-
-buildRegexFromString : String -> String -> String -> String
-buildRegexFromString device action ttl =
-    device ++ action ++ ttl
-        
-buildRegex : List Device -> List Action -> Bool -> String
-buildRegex device action ttlRemember =
-    let rem = if ttlRemember then remember else dontremember
-    in (buildRegexDevice device)
-        ++ (buildRegexAction action)
-        ++ (rem regexDiff)
-
-buildRegexDevice : List Device -> String
-buildRegexDevice device =
-    let b = if List.length device > 1 then ("[","]") else ("","")
-    in (fst b) 
-        ++ (List.foldl (\d -> \dd -> dd ++ deviceToString d) "" device) 
-        ++ (snd b) 
-
-buildRegexAction : List Action -> String
-buildRegexAction action =
-    let b = if List.length action > 1 then ("[","]") else ("","")
-    in (fst b)
-        ++ (List.foldl (\a -> \aa -> aa ++ actionToString a) "" action) 
-        ++ (snd b) 
-
-
-regexAnyEvent : String
-regexAnyEvent = buildRegexFromString 
-    regexAnyDevice
-    regexAnyAction 
-    (remember regexDiff)
-
-regexDiff : String
-regexDiff = "\\d+"
-
-dontremember : String -> String
-dontremember string = "(?:"++string++")"
-
-remember : String -> String
-remember string = "("++string++")"
-
-regexAnyMouseEvent : String
-regexAnyMouseEvent = buildRegex [Mouse] [Start,End,Leave,Move] True
-
-regexAnyTouchEvent : String
-regexAnyTouchEvent = buildRegex [Touch] [Start,End,Leave,Move] True
-
-regexAnyAction : String
-regexAnyAction = buildRegexAction [Start,End,Leave,Move] 
-
-regexAnyDevice : String
-regexAnyDevice = buildRegexDevice [Mouse,Touch]
-
-parseInput : TapModel a -> TapModel a
-parseInput model = 
-    model
-    --{ model | pastEvents <- (Debug.log "after twoStarts" (twoStarts model.pastEvents))}
-
--- reduce two consecutive mouse/touch start events to one
-twoStarts : PastEvents -> PastEvents
-twoStarts events =
-    replace (AtMost 1) (
-        "(" ++ (buildRegex [Mouse,Touch] [Start] True) ++ "){2}" |> regex
-    ) (\m -> m.match ) events
-
-parseAction : TapModel a -> Maybe a
-parseAction model =
-    case model.success of
-        Nothing -> Nothing
-        Just s -> 
-            if (Debug.log "parseAction, success" ((fst s) model.pastEvents))
-               then Just (snd s)
-               else Nothing
-
-click : Time -> Time -> PastEvents -> Bool
-click range recent events =
-    let matchTouch = Debug.log "touchclick head" 
-            <| find (AtMost 1) (regex
-                    <| "^"
-                    ++ buildRegex [Touch] [End] True
-                    ++ dontremember (
-                            (dontremember 
-                                (buildRegex [Touch] [Move] False) 
-                            )
-                            ++ "|" ++
-                            (dontremember
-                                (buildRegex [Mouse] [Start,End,Leave,Move] False)
-                            )
-                        ) ++ "{0,5}"
-                    ++ buildRegex [Touch] [Start] True
-                )
-                events
-        matchMouse = Debug.log "mouseclick head" 
-            <| find (AtMost 1) (regex
-                    <| "^"
-                    ++ buildRegex [Mouse] [End] True
-                    ++ dontremember (buildRegex [Mouse] [Move] False)
-                    ++ "{0,5}"
-                    ++ buildRegex [Mouse] [Start] True
-                )
-                events
+click' : Time -> Time -> PastEvents -> Bool
+click' maxRange minLast events =
+    let matchTouch = 
+            find (AtMost 1) (regex
+                <| "^"
+                ++ buildRegex [Touch] [End] True
+                ++ dontremember (
+                        (dontremember 
+                            (buildRegex [Touch] [Move] False) 
+                        )
+                        ++ "|" ++
+                        (dontremember
+                            (buildRegex [Mouse] [Start,End,Leave,Move] False)
+                        )
+                    ) ++ "{0,5}"
+                ++ buildRegex [Touch] [Start] True
+            )
+            events
+        matchMouse = 
+            find (AtMost 1) (regex
+                <| "^"
+                ++ buildRegex [Mouse] [End] True
+                ++ dontremember (buildRegex [Mouse] [Move] False)
+                ++ "{0,5}"
+                ++ buildRegex [Mouse] [Start] True
+            )
+            events
         matches = 
             if List.isEmpty matchTouch 
                then matchMouse 
@@ -261,40 +364,42 @@ click range recent events =
         last =
             if List.isEmpty matchTouch
                then getLast Touch events
-               else Nothing --getLast "Mouse" events
+               else Nothing 
+               -- note: last mouse events are not checked because it might be 
+               -- virtual mouse events of a previous touch. Also means that a
+               -- user must not switch from mouse to touch within `minLast` 
+               -- time.
 
     in
-       case Debug.log "diff" (diff time1 time2) of
+       case diff time1 time2 of
            Nothing -> False
            Just d ->
-               d < range
-               -- means: touchend needs to happen within 300ms after start 
-       && case Debug.log "last" (diff time2 last) of
+               d < maxRange -- end has to happen within `maxRange` after start 
+       && case diff time2 last of
            Nothing -> True
            Just l -> 
-               l > recent
-               -- means: at least 300ms after a mouse event (or vice-versa)
+               l > minLast -- at least `minLast` time after 
 
-diff : Maybe Time -> Maybe Time -> Maybe Time
-diff t1 t2 =
-   case t1 of
-       Nothing -> Nothing
-       Just t1 -> case t2 of
-           Nothing -> Nothing
-           Just t2 -> Just (t1-t2)
+{-| A convenient click success function in the sense of start and end happening 
+within 300 ms and not past virtual mouse event must exist within the last 700 ms
+-}
+click = click' (300*millisecond) (700*millisecond)
 
+{-| A simple mousestart/touchstart success function which can be parameterized
+with `minLast` (minimum time of last mouse event).
+-}
 start' : Time -> PastEvents -> Bool
 start' minLast events =
     let match =
-            find (AtMost 1) 
-                 (regex <| "^" 
-                 ++ (buildRegexFromString 
-                        (remember regexAnyDevice) 
-                        (dontremember (buildRegexAction [Start]))
-                        (remember regexDiff)
-                    )
-                 )
-                 events
+        find (AtMost 1) 
+             (regex <| "^" 
+             ++ (buildRegexFromString 
+                    (remember regexAnyDevice) 
+                    (dontremember (buildRegexAction [Start]))
+                    (remember regexDiff)
+                )
+             )
+             events
         device = getSubmatch match 1
         time = getTime match 2
         last = case device of
@@ -308,31 +413,7 @@ start' minLast events =
            Nothing -> True
            Just l -> l > minLast
 
-getSubmatch : List Match -> Int -> Maybe String
-getSubmatch matches position =
-    let submatch = case List.head matches of
-            Nothing -> Nothing
-            Just m -> case List.head <| List.drop (position-1) m.submatches of
-                Nothing -> Nothing
-                Just h -> h
-    in submatch
-
-        
-getTime : List Match -> Int -> Maybe Time
-getTime matches position =
-    case getSubmatch matches position of
-        Nothing -> Nothing
-        Just d -> case String.toFloat d of
-            Err x -> Nothing
-            Ok di -> Just di
-
-getLast : Device -> PastEvents -> Maybe Time
-getLast device events =
-    let es = find (AtMost 1) (
-                    regex <| buildRegex [device] [Start,End,Move,Leave] True
-                ) events
-    in getTime es 1
-
-
-normalclick = click (300*millisecond) (700*millisecond)
+{-| A simple mousestart/touchstart success function. If you want a maximum of 
+    responsiveness.
+-}
 start = start' (700*millisecond)
