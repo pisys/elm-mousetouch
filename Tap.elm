@@ -1,4 +1,4 @@
-module Tap (TapBox,tapbox,click, normalclick) where
+module Tap (TapBox,tapbox,click, normalclick, start) where
 import Html exposing (Attribute, text, Html, div)
 import Html.Events 
 import Json.Decode as Json
@@ -261,13 +261,6 @@ click range recent events =
                then getLast Touch events
                else Nothing --getLast "Mouse" events
 
-        diff t1 t2 =
-           case t1 of
-               Nothing -> Nothing
-               Just t1 -> case t2 of
-                   Nothing -> Nothing
-                   Just t2 -> Just (t1-t2)
-
     in
        case Debug.log "diff" (diff time1 time2) of
            Nothing -> False
@@ -279,6 +272,21 @@ click range recent events =
            Just l -> 
                l > recent
                -- means: at least 300ms after a mouse event (or vice-versa)
+
+diff : Maybe Time -> Maybe Time -> Maybe Time
+diff t1 t2 =
+   case t1 of
+       Nothing -> Nothing
+       Just t1 -> case t2 of
+           Nothing -> Nothing
+           Just t2 -> Just (t1-t2)
+
+start : PastEvents -> Bool
+start events =
+    not <| List.isEmpty 
+        <| find (AtMost 1) 
+             (regex <| "^" ++ buildRegex [Mouse,Touch] [Start] False)
+             events
         
 getTime : List Match -> Int -> Maybe Time
 getTime matches position =
