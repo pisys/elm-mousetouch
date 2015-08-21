@@ -283,26 +283,48 @@ diff t1 t2 =
            Nothing -> Nothing
            Just t2 -> Just (t1-t2)
 
-start : PastEvents -> Bool
-start events =
-    not <| List.isEmpty 
-        <| find (AtMost 1) 
-             (regex <| "^" ++ buildRegex [Mouse,Touch] [Start] False)
-             events
-        
-getTime : List Match -> Int -> Maybe Time
-getTime matches position =
+start' : Time -> PastEvents -> Bool
+start' minLast events =
+    let match =
+            find (AtMost 1) 
+                 (regex <| "^" 
+                 ++ (buildRegexFromString 
+                        (remember regexAnyDevice) 
+                        (dontremember (buildRegexAction [Start]))
+                        (remember regexDiff)
+                    )
+                 )
+                 events
+        device = getSubmatch match 1
+        time = getTime match 2
+        last = case device of
+            Nothing -> Nothing
+            Just d -> if d == buildRegexDevice [Mouse] 
+                         then getLast Touch events
+                         else Nothing
+    in
+       if time == Nothing then False
+       else case diff time last of 
+           Nothing -> True
+           Just l -> l > minLast
+
+getSubmatch : List Match -> Int -> Maybe String
+getSubmatch matches position =
     let submatch = case List.head matches of
             Nothing -> Nothing
             Just m -> case List.head <| List.drop (position-1) m.submatches of
                 Nothing -> Nothing
                 Just h -> h
-    in case submatch of 
+    in submatch
+
+        
+getTime : List Match -> Int -> Maybe Time
+getTime matches position =
+    case getSubmatch matches position of
         Nothing -> Nothing
-        Just d ->
-            case String.toFloat d of
-                Err x -> Nothing
-                Ok di -> Just di
+        Just d -> case String.toFloat d of
+            Err x -> Nothing
+            Ok di -> Just di
 
 getLast : Device -> PastEvents -> Maybe Time
 getLast device events =
@@ -313,4 +335,4 @@ getLast device events =
 
 
 normalclick = click (300*millisecond) (700*millisecond)
-
+start = start' (700*millisecond)
