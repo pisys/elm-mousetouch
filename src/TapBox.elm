@@ -1,21 +1,30 @@
 module TapBox (TapBox, tapbox, click', click, start', start) where
+
+{-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms
+them into "high-level" clicks, hiding the user input method of the device 
+(mouse, touch or both) and circumventing quirks like the 300ms delay of 'click'
+events on touch devices.
+
+Low-level events are mousestart, mouseend, mousemove, mouseout, touchstart,
+touchend, touchmove and touchleave.
+
+High-level events are defined as success functions which evaluate past low-level 
+events.
+
+# Definition
+@docs TapBox, tapbox
+
+# Success Functions
+@docs click', click, start', start
+
+-}
+
 import Html exposing (Attribute, text, Html, div)
 import Html.Events 
 import Json.Decode as Json
 import Time exposing (Time, millisecond, timestamp, second)
 import Regex exposing (..)
 import String
-
-{-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms them into
-"high-level" clicks, hiding the user input method of the device (mouse, touch or
-both).
-
-Low-level events are mousestart, mouseend, mousemove, mouseout, touchstart,
-touchend, touchmove and touchleave.
-
-High-level events are defined as user provided success functions which evaluate
-past low-level events.
--}
 
 type Device = Mouse | Touch
 type Action = Start | End | Leave | Move
@@ -268,6 +277,29 @@ event handlers instead of an address. `signal` yields a Signal of user defined
 type given the result of the success function (PastEvents -> Bool).
 
 Event handlers wrap Html.Events.onWithOptions.
+
+    type Action = Increment | Decrement | NoOp
+
+    myTapBox : TapBox Action
+    myTapBox = tapbox NoOp second
+
+    view on model =
+      div [] 
+        [ button ( on click Decrement ) [ text "-" ]
+        , div [] [ text (toString model) ]
+        , button ( on click Increment ) [ text "+" ]
+        ]
+
+    update action model =
+      case action of
+        Increment -> model + 1
+        Decrement -> model - 1
+        
+    main = Signal.map (view myTapBox.on) 
+           <| Signal.foldp update 0 myTapBox.signal
+
+Note that `on` and `onWithOptions` return a List of Attributes (for each event
+one).
 -}
 type alias TapBox a = {
         on: ((PastEvents -> Bool) -> a -> List Attribute)
@@ -315,11 +347,11 @@ tapbox noop prune =
                     <| timestamp mailbox.signal
         }
 
-{-| A click success function which has to parametrized with the `maxRange`
+{-| A click success function which has to be parametrized with the `maxRange`
 between the start and end event (ie. mousedown/mouseup or touchstart/touchend),
 and `minLast`, the minimum time of last occurence of a touch event in case of a
 mouse event. This is to prevent virtual mouse events which are triggered approx.
-300ms after a touch event on most touch screens.
+300ms after a touch event on most touch devices.
 
 Click searches past events for a pattern of mouseend (mousemove{0,5}) mousestart
 or touchend (touchmove|mouseevent){0|5} touchstart. The latter ignores virtual 
@@ -383,6 +415,7 @@ click' maxRange minLast events =
 {-| A convenient click success function in the sense of start and end happening 
 within 300 ms and not past virtual mouse event must exist within the last 700 ms
 -}
+click : PastEvents -> Bool
 click = click' (300*millisecond) (700*millisecond)
 
 {-| A simple mousestart/touchstart success function which can be parameterized
@@ -416,4 +449,5 @@ start' minLast events =
 {-| A simple mousestart/touchstart success function. If you want a maximum of 
     responsiveness.
 -}
+start : PastEvents -> Bool
 start = start' (700*millisecond)
