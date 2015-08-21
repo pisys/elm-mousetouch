@@ -19,10 +19,14 @@ tapbox noop prune =
 
         onWithOptions options hle msg =
             let 
+                -- always preventDefault to avoid virtual mouseevents after touch events
+                op = { stopPropagation = options.stopPropagation
+                     , preventDefault = True } 
                 helper event x = 
-                    Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
-                        (Signal.forwardTo mailbox.address Just) 
-                    x)
+                    Html.Events.onWithOptions event op Json.value 
+                        (\_ -> Signal.message 
+                            (Signal.forwardTo mailbox.address Just) 
+                        x)
             in
                 [helper "touchstart" (((Touch, Start), hle), msg)
                 ,helper "touchmove" (((Touch, Move), hle), msg)
@@ -37,7 +41,7 @@ tapbox noop prune =
     in 
         {
             onWithOptions = onWithOptions,
-            on = onWithOptions {stopPropagation = False, preventDefault = False},
+            on = onWithOptions {stopPropagation = False, preventDefault = True},
             signal = 
                 Signal.filterMap parseAction noop 
                     <| Signal.map parseInput
@@ -229,15 +233,9 @@ click range recent events =
             <| find (AtMost 1) (regex
                     <| "^"
                     ++ buildRegex [Touch] [End] True
-                    ++ dontremember (
-                            (dontremember 
-                                (buildRegex [Touch] [Move] False) 
-                            )
-                            ++ "|" ++
-                            (dontremember
-                                (buildRegex [Mouse] [Start,End,Leave,Move] False)
-                            )
-                        ) ++ "{0,5}"
+                    ++ (dontremember 
+                            (buildRegex [Touch] [Move] False) 
+                       ) ++ "{0,5}"
                     ++ buildRegex [Touch] [Start] True
                 )
                 events
