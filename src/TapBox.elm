@@ -1,4 +1,4 @@
-module TapBox (TapBox, tapbox, click', click, start', start) where
+module TapBox (TapBox, tapbox, click', click, start) where
 
 {-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms
 them into "high-level" clicks, hiding the user input method of the device 
@@ -15,7 +15,7 @@ events.
 @docs TapBox, tapbox
 
 # Success Functions
-@docs click', click, start', start
+@docs click', click, start
 
 -}
 
@@ -147,15 +147,16 @@ actionToString action =
 {-| Various regex utility functions.
 -}
 buildRegexFromString : String -> String -> String -> String
-buildRegexFromString device action ttl =
-    device ++ action ++ ttl
+buildRegexFromString device action time =
+    device ++ action ++ time
         
 {-| Build the regular expression for matching one or more Device types and one
-or more Action types. 
+or more Action types. The boolean parameter makes the time part a submatching 
+pattern.
 -} 
 buildRegex : List Device -> List Action -> Bool -> String
-buildRegex device action ttlRemember =
-    let rem = if ttlRemember then remember else dontremember
+buildRegex device action timeRemember =
+    let rem = if timeRemember then remember else dontremember
     in (buildRegexDevice device)
         ++ (buildRegexAction action)
         ++ (rem regexDiff)
@@ -231,8 +232,8 @@ diff t1 t2 =
            Nothing -> Nothing
            Just t2 -> Just (t1-t2)
 
-{-| Get the String from the `position`'th submatch of the first of given 
-Regex.find matches.
+{-| Get a certain String from the first of Regex.find matches given its position
+in the submatches list.
 -}
 getSubmatch : List Match -> Int -> Maybe String
 getSubmatch matches position =
@@ -253,7 +254,7 @@ getTime matches position =
             Err x -> Nothing
             Ok di -> Just di
 
-{-| Get the time of the last occurrence of any `device` event.
+{-| Get the time of the last occurrence of any Mouse/Touch event.
 -}
 getLast : Device -> PastEvents -> Maybe Time
 getLast device events =
@@ -269,6 +270,9 @@ getLast device events =
 touches : a -> Signal.Mailbox (Maybe (((Device,Action), (PastEvents -> Bool)), a))
 touches a =
     Signal.mailbox Nothing
+
+minLast : Time
+minLast = (700*Time.millisecond)
 
 -- API
 
@@ -309,12 +313,12 @@ type alias TapBox a = {
     }
 
 {-| Construct a TapBox given a default value of user defined type and the time
-events reside in the `TapModel.pastEvents` buffer before they are pruned. 
+events reside in the buffer before they are pruned. 
 
 Creates an internal Signal.Mailbox and wires its address with mouse and touch
-event handlers. The signal is folded into a TapModel which represents the past
-of the events within `prune` time. On any event the success function is applied
-to the past events. 
+event handlers. The signal is folded into an internal model which represents the
+past of the events within `prune` time. On any event the success function is 
+applied to the past events. 
 -}
 tapbox : a -> Time -> TapBox a
 tapbox noop prune = 
@@ -347,19 +351,16 @@ tapbox noop prune =
                     <| timestamp mailbox.signal
         }
 
-{-| A click success function which has to be parametrized with the `maxRange`
-between the start and end event (ie. mousedown/mouseup or touchstart/touchend),
-and `minLast`, the minimum time of last occurence of a touch event in case of a
-mouse event. This is to prevent virtual mouse events which are triggered approx.
-300ms after a touch event on most touch devices.
+{-| A click success function which has to be parametrized with the maximum range
+between the start and end event (ie. mousedown/mouseup or touchstart/touchend).
 
 Click searches past events for a pattern of mouseend (mousemove{0,5}) mousestart
 or touchend (touchmove|mouseevent){0|5} touchstart. The latter ignores virtual 
 mouse events intermingling with a fast series of touches.
 -}
 
-click' : Time -> Time -> PastEvents -> Bool
-click' maxRange minLast events =
+click' : Time -> PastEvents -> Bool
+click' maxRange events =
     let matchTouch = 
             find (AtMost 1) (regex
                 <| "^"
@@ -416,13 +417,13 @@ click' maxRange minLast events =
 within 300 ms and not past virtual mouse event must exist within the last 700 ms
 -}
 click : PastEvents -> Bool
-click = click' (300*millisecond) (700*millisecond)
+click = click' (300*millisecond)
 
-{-| A simple mousestart/touchstart success function which can be parameterized
-with `minLast` (minimum time of last mouse event).
+{-| A simple mousestart/touchstart success function. If you want a maximum of 
+    responsiveness.
 -}
-start' : Time -> PastEvents -> Bool
-start' minLast events =
+start : PastEvents -> Bool
+start events =
     let match =
         find (AtMost 1) 
              (regex <| "^" 
@@ -445,9 +446,3 @@ start' minLast events =
        else case diff time last of 
            Nothing -> True
            Just l -> l > minLast
-
-{-| A simple mousestart/touchstart success function. If you want a maximum of 
-    responsiveness.
--}
-start : PastEvents -> Bool
-start = start' (700*millisecond)
