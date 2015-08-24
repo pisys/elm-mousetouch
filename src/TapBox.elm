@@ -26,10 +26,15 @@ import Time exposing (Time, millisecond, timestamp, second)
 import Regex exposing (..)
 import String
 
-type Device = Mouse | Touch
-type Action = Start | End | Leave | Move
+type Device = Mouse 
+            | Touch
+type Action = Start 
+            | End 
+            | Leave 
+            | Move
 
-type alias Event = ((Device, Action), Time)
+type alias Event = 
+    ((Device, Action), Time)
 
 {-| Past events are stored in a String and accessed with regular expressions.
 -}
@@ -45,18 +50,20 @@ type alias TapModel a =
     }
 
 init : TapModel a
-init = {
-    pastEvents = "",
-    success = Nothing,
-    timebase = 0
+init = 
+    { pastEvents = ""
+    , success = Nothing
+    , timebase = 0
     }
 
 {-| Update the TapModel with the incoming event.
 * Prune events older than `prune`
 * Reset timebase and adjust past events after a time of `prune`
 -}
-update : Time -> (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) 
-    -> TapModel a -> TapModel a
+update : Time 
+    -> (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) 
+    -> TapModel a 
+    -> TapModel a
 update prune event model =
     let t = fst event
         e = snd event
@@ -65,18 +72,20 @@ update prune event model =
         Nothing -> model
         Just ev -> 
             let 
-                newTimebase = if (model.timebase + prune) < (t - prune)
-                                 then t - prune
-                                 else model.timebase
-
-                newEventTime = t - newTimebase
-
-                newEvent = eventToString (fst (fst ev), newEventTime)
-                success = (snd (fst ev), snd ev)
-
-                pruneBelow = t - model.timebase - prune
-
-                newPastEvents = adjustPastEvents (newTimebase - model.timebase) 
+                newTimebase = 
+                    if (model.timebase + prune) < (t - prune)
+                        then t - prune
+                        else model.timebase
+                newEventTime = 
+                    t - newTimebase
+                newEvent = 
+                    eventToString (fst (fst ev), newEventTime)
+                success = 
+                    (snd (fst ev), snd ev)
+                pruneBelow = 
+                    t - model.timebase - prune
+                newPastEvents = 
+                    adjustPastEvents (newTimebase - model.timebase) 
                     <| pruneEvents pruneBelow model.pastEvents
             in 
                { model | pastEvents <- newEvent ++ newPastEvents
@@ -156,7 +165,8 @@ pattern.
 -} 
 buildRegex : List Device -> List Action -> Bool -> String
 buildRegex device action timeRemember =
-    let rem = if timeRemember then remember else dontremember
+    let rem = 
+            if timeRemember then remember else identity
     in (buildRegexDevice device)
         ++ (buildRegexAction action)
         ++ (rem regexDiff)
@@ -165,7 +175,10 @@ buildRegex device action timeRemember =
 -} 
 buildRegexDevice : List Device -> String
 buildRegexDevice device =
-    let b = if List.length device > 1 then ("[","]") else ("","")
+    let b = 
+            if List.length device > 1 
+               then ("[","]") 
+               else ("","")
     in (fst b) 
         ++ (List.foldl (\d -> \dd -> dd ++ deviceToString d) "" device) 
         ++ (snd b) 
@@ -174,16 +187,20 @@ buildRegexDevice device =
 -} 
 buildRegexAction : List Action -> String
 buildRegexAction action =
-    let b = if List.length action > 1 then ("[","]") else ("","")
+    let b = 
+            if List.length action > 1 
+               then ("[","]") 
+               else ("","")
     in (fst b)
         ++ (List.foldl (\a -> \aa -> aa ++ actionToString a) "" action) 
         ++ (snd b) 
 
 regexAnyEvent : String
-regexAnyEvent = buildRegexFromString 
-    regexAnyDevice
-    regexAnyAction 
-    (remember regexDiff)
+regexAnyEvent = 
+    buildRegexFromString 
+        regexAnyDevice
+        regexAnyAction 
+        (remember regexDiff)
 
 regexDiff : String
 regexDiff = "\\d+"
@@ -305,11 +322,11 @@ Event handlers wrap Html.Events.onWithOptions.
 Note that `on` and `onWithOptions` return a List of Attributes (for each event
 one).
 -}
-type alias TapBox a = {
-        on: ((PastEvents -> Bool) -> a -> List Attribute)
-        , onWithOptions : 
-            (Html.Events.Options -> (PastEvents -> Bool) -> a -> List Attribute)
-        , signal : Signal a
+type alias TapBox a = 
+    { on: ((PastEvents -> Bool) -> a -> List Attribute)
+    , onWithOptions : 
+        (Html.Events.Options -> (PastEvents -> Bool) -> a -> List Attribute)
+    , signal : Signal a
     }
 
 {-| Construct a TapBox given a default value of user defined type and the time
