@@ -98,7 +98,7 @@ update prune event model =
 pruneEvents : Time -> PastEvents -> PastEvents
 pruneEvents pruneBelow events =
     if pruneBelow <= 0 then events
-       else replace All (regex regexAnyEvent) (pruneEvent pruneBelow) events
+       else replace All (regex "[MT][selm](\\d+)") (pruneEvent pruneBelow) events
 
 {-| Prune an event if its timestamp is below `pruneBelow`.
 -}
@@ -122,7 +122,7 @@ adjustPastEvents : Time -> PastEvents -> PastEvents
 adjustPastEvents diffTimebase events =
     if diffTimebase == 0 then events
        else replace All 
-        (regex regexDiff )
+        (regex "\\d+" )
         (adjustTime diffTimebase) 
         events
 
@@ -152,81 +152,6 @@ deviceToString device =
 actionToString : Action -> String
 actionToString action =
     toString action |> String.left 1 |> String.toLower 
-
-{-| Various regex utility functions.
--}
-buildRegexFromString : String -> String -> String -> String
-buildRegexFromString device action time =
-    device ++ action ++ time
-        
-{-| Build the regular expression for matching one or more Device types and one
-or more Action types. The boolean parameter makes the time part a submatching 
-pattern.
--} 
-buildRegex : List Device -> List Action -> Bool -> String
-buildRegex device action timeRemember =
-    let rem = 
-            if timeRemember then remember else identity
-    in (buildRegexDevice device)
-        ++ (buildRegexAction action)
-        ++ (rem regexDiff)
-
-{-| Build the regular expression for matching one or more Device types. 
--} 
-buildRegexDevice : List Device -> String
-buildRegexDevice device =
-    let b = 
-            if List.length device > 1 
-               then ("[","]") 
-               else ("","")
-    in (fst b) 
-        ++ (List.foldl (\d -> \dd -> dd ++ deviceToString d) "" device) 
-        ++ (snd b) 
-
-{-| Build the regular expression for matching one or more Action types. 
--} 
-buildRegexAction : List Action -> String
-buildRegexAction action =
-    let b = 
-            if List.length action > 1 
-               then ("[","]") 
-               else ("","")
-    in (fst b)
-        ++ (List.foldl (\a -> \aa -> aa ++ actionToString a) "" action) 
-        ++ (snd b) 
-
-regexAnyEvent : String
-regexAnyEvent = 
-    buildRegexFromString 
-        regexAnyDevice
-        regexAnyAction 
-        (remember regexDiff)
-
-regexDiff : String
-regexDiff = "\\d+"
-
-{-| Wrap a regular expression in (?:x) so it is treated as a group but not
-remembered as a submatch. 
- -}
-dontremember : String -> String
-dontremember string = "(?:"++string++")"
-
-{-| Wrap a regular expression in (x) so it is remembered as a submatch. 
- -}
-remember : String -> String
-remember string = "("++string++")"
-
-regexAnyMouseEvent : String
-regexAnyMouseEvent = buildRegex [Mouse] [Start,End,Leave,Move] True
-
-regexAnyTouchEvent : String
-regexAnyTouchEvent = buildRegex [Touch] [Start,End,Leave,Move] True
-
-regexAnyAction : String
-regexAnyAction = buildRegexAction [Start,End,Leave,Move] 
-
-regexAnyDevice : String
-regexAnyDevice = buildRegexDevice [Mouse,Touch]
 
 {-| Apply the success function to the past events.
 -}
@@ -270,15 +195,6 @@ getTime matches position =
         Just d -> case String.toFloat d of
             Err x -> Nothing
             Ok di -> Just di
-
-{-| Get the time of the last occurrence of any Mouse/Touch event.
--}
-getLast : Device -> PastEvents -> Maybe Time
-getLast device events =
-    let es = find (AtMost 1) (
-                    regex <| buildRegex [device] [Start,End,Move,Leave] True
-                ) events
-    in getTime es 1
 
 -- SIGNALS
 
@@ -381,26 +297,22 @@ click' maxRange events =
     let matchTouch = 
             find (AtMost 1) (regex
                 <| "^"
-                ++ buildRegex [Touch] [End] True
-                ++ dontremember (
-                        (dontremember 
-                            (buildRegex [Touch] [Move] False) 
-                        )
-                        ++ "|" ++
-                        (dontremember
-                            (buildRegex [Mouse] [Start,End,Leave,Move] False)
-                        )
-                    ) ++ "{0,5}"
-                ++ buildRegex [Touch] [Start] True
+                ++ "Te(\\d+)" 
+                    ++ "(?:" 
+                    ++ "(?:Tm\\d+)"
+                    ++ "|"
+                    ++ "(?:M.\\d+)"
+                    ++ "){0,5}"
+                ++ "Ts(\\d+)"
             )
             events
         matchMouse = 
             find (AtMost 1) (regex
                 <| "^"
-                ++ buildRegex [Mouse] [End] True
-                ++ dontremember (buildRegex [Mouse] [Move] False)
-                ++ "{0,5}"
-                ++ buildRegex [Mouse] [Start] True
+                ++ "Me(\\d+)"
+                ++ "(?:Mm\\d+){0,5}"
+                ++ "Ms(\\d+)"
+                ++ "[^T]*(?:T.(\\d+))?"
             )
             events
         matches = 
@@ -410,15 +322,7 @@ click' maxRange events =
 
         time1 = getTime matches 1
         time2 = getTime matches 2
-
-        last =
-            if List.isEmpty matchTouch
-               then getLast Touch events
-               else Nothing 
-               -- note: last mouse events are not checked because it might be 
-               -- virtual mouse events of a previous touch. Also means that a
-               -- user must not switch from mouse to touch within `minLast` 
-               -- time.
+        last = getTime matches 3
 
     in
        case diff time1 time2 of
@@ -443,20 +347,17 @@ start : PastEvents -> Bool
 start events =
     let match =
         find (AtMost 1) 
-             (regex <| "^" 
-             ++ (buildRegexFromString 
-                    (remember regexAnyDevice) 
-                    (dontremember (buildRegexAction [Start]))
-                    (remember regexDiff)
-                )
+             (regex <| "^"
+                ++ "([MT])s(\\d+)"
+                ++ "[^T]*(?:T.(\\d+))?"
              )
              events
         device = getSubmatch match 1
         time = getTime match 2
         last = case device of
             Nothing -> Nothing
-            Just d -> if d == buildRegexDevice [Mouse] 
-                         then getLast Touch events
+            Just d -> if d == deviceToString Mouse
+                         then getTime match 3
                          else Nothing
     in
        if time == Nothing then False
