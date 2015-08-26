@@ -35,13 +35,13 @@ TapBox is an [Elm](http://elm-lang.org) library which unifies touch and mouse ev
     main = Signal.map (view myTapBox.on) 
            <| Signal.foldp update 0 myTapBox.signal
 
-This example will result in instant sending of `Increment` or `Decrement` to `myTapBox.signal` irrespectively of whether the user clicks or taps the button. TapBox functions like Elm's Mailbox with the difference that the event handler creating function `on` is exposed instead of an address. 
+This example will result in instant sending of `Increment` or `Decrement` to `myTapBox.signal` irrespectively of whether the user clicks or taps the button. TapBox functions like Elm's `Mailbox` with the difference that the event handler creating function `on` is exposed instead of an `Address`. 
 
 Additionally, instead of the mere event name, `on` receives a success function as the first parameter of type `(PastEvents -> Bool)` (PastEvents is a type alias for String). On each event this function evaluates the past string of events for a matching pattern that conforms to what we want to be a "click", for instance. If its result is `True` the signal of the TapBox changes to the defined value, eg. `Increment`. 
 
 Actually the success function completely hides the input mode of the user's device. So it is possible to model user interaction on HTML elements transparently. For instance, double click could be modelled as two mouse clicks occurring within 250 ms on the one hand and as a long tap of at least 250ms on the other hand, both patterns being evaluated within the same success function. 
 
-It is possible to define own success functions but you might need to look at the source of `click` to understand how. Here's a short explanation:
+It is possible to define own success functions. Here's a short explanation:
 
 ### Modelling device-agnostic events
 
@@ -64,7 +64,7 @@ followed by the time the event happened. An example of past events might look li
 
 Timestamps are relative to a time base in order to save memory. In this case the last event was a `mouseend`, preceded by `mousestart`, `touchend`, `touchmove` and `touchstart`. All events resulted from the same tap. In this example you can also see the 300ms seconds delay between the touch and the mouse events. 
 
-A success function can simply parse this string with regular expressions, submatch the timestamps, calculate differences if needed and decide whether it fulfills the requirements for the high level event (eg. the click). 
+A success function simply parses this string with regular expressions, submatches the timestamps, calculate differences if needed and decides whether it fulfills the requirements for the high level event (eg. the click). 
 
 In the example above we would need a regex like the following in order to match the mouse click:
 
@@ -75,6 +75,14 @@ Here we look for `mouseend` and `mousestart` and optionally up to 5 `mousemove`s
 For detecting a tap we check for the corresponding touch events and additionally ignore any mouse events in between. That's because virtual mouse events can intermingle with touch events in case of a fast series of taps. 
 
     ^Te(\d+)(?:(?:Tm\d+)|(?:M.\d+)){0,5}Ts(\d+)
+
+The utility functions help dealing with the match result. 
+
+* `getSubmatch : List Match -> Int -> Maybe String` maybe returns a String from the list of submatches in the first match (ignores any further matches).
+* `getTime : List Match -> Int -> Maybe Time` wraps `getSubmatch` and converts the String to Time.
+* `diff : Maybe Time -> Maybe Time -> Maybe Time` calculates the difference between two "maybe times". If one of the inputs is Nothing, the result is Nothing too.
+
+Look at the source of [click'](src/TapBox.elm#L298) for a complete example.
 
 ## Status
 

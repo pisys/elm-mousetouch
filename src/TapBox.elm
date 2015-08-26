@@ -1,4 +1,4 @@
-module TapBox (TapBox, tapbox, click', click, start) where
+module TapBox (TapBox, tapbox, click', click, start, diff, getTime, getSubmatch) where
 
 {-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms
 them into "high-level" clicks, hiding the user input method of the device 
@@ -16,6 +16,9 @@ events.
 
 # Success Functions
 @docs click', click, start
+
+# Utility stuff
+@docs getSubmatch, getTime, diff
 
 -}
 
