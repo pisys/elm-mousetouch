@@ -58,8 +58,7 @@ type Action = Start
 
 {-| Normalized low-level events. This type could be extended to keep coordinates as well.
 -}
-type alias Event = 
-    ((Device, Action), Time)
+type alias Event = ((Device, Action), Time)
 
 {-| The past events are a list of `Event`s. These need to be evaluated by an `EvalFunction`.
 -}
@@ -93,17 +92,22 @@ Event handlers wrap Html.Events.onWithOptions.
 -}
 type alias TapBox a = 
     { signal : Signal a
-    , address : Signal.Address (LowLevelHandler a)
+    , address : Signal.Address (Maybe (LowLevelHandler a))
     }
 
 {-| The evaluation function evaluates past events.
 -}
 type alias EvalFunction = (PastEvents -> Bool)
 
-{-| Combines a low-level event with an `EvalFunction` and with a user-defined message which will be send on positive evaluation of `PastEvents`.
+{-| Combines a normalized low-level event with an `EvalFunction` and with a 
+user-defined message which will be send on positive evaluation of `PastEvents`.
 -}
 type alias LowLevelHandler a = 
-    Maybe (((Device, Action), EvalFunction), a)
+        { eval : EvalFunction
+        , msg : a
+        , device : Device
+        , action : Action
+        }
 
 init : TapModel a
 init = 
@@ -117,13 +121,13 @@ init =
 * Reset timebase and adjust past events after a time of `prune`
 -}
 update : Time 
-    -> (Time, LowLevelHandler a) 
+    -> (Time, Maybe (LowLevelHandler a))
     -> TapModel a 
     -> TapModel a
 update prune (t, e) model =
     case e of 
         Nothing -> model
-        Just (((device, action), evalEvents), msg) -> 
+        Just {device, action, eval, msg} -> 
             let 
                 newTimebase = 
                     if (model.timebase + prune) < (t - prune)
@@ -132,9 +136,7 @@ update prune (t, e) model =
                 newEventTime = 
                     t - newTimebase
                 newEvent = 
-                    ((device,action), newEventTime)
-                eval = 
-                    (evalEvents, msg)
+                    ((device, action), newEventTime)
                 pruneBelow = 
                     t - model.timebase - prune
                 newPastEvents = 
@@ -142,7 +144,7 @@ update prune (t, e) model =
                     <| pruneEvents pruneBelow model.pastEvents
             in 
                { model | pastEvents <- newEvent :: newPastEvents
-                       , eval <- Just eval
+                       , eval <- Just (eval, msg)
                        , timebase <- newTimebase
                }
 
@@ -167,7 +169,7 @@ adjustPastEvents : Time -> PastEvents -> PastEvents
 adjustPastEvents diffTimebase events =
     let
         adjustTime (e,t) =
-            (e,t-diffTimebase)
+            ( e, t - diffTimebase )
     in
         if diffTimebase == 0 
             then events
@@ -189,7 +191,7 @@ evaluate model =
 
 {-| A Mailbox wrapping the user defined action in low-level events.
 -}
-touches : a -> Signal.Mailbox (LowLevelHandler a)
+touches : a -> Signal.Mailbox (Maybe (LowLevelHandler a))
 touches a =
     Signal.mailbox Nothing
 
@@ -219,7 +221,7 @@ Equivalent of `Html.Events.onWithOptions`.
 -}
 onWithOptions : EvalFunction
                 -> Options
-                -> Address (LowLevelHandler a)
+                -> Address (Maybe (LowLevelHandler a))
                 -> a 
                 -> List Attribute
 onWithOptions evalEvents options address msg =
@@ -228,15 +230,16 @@ onWithOptions evalEvents options address msg =
             Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
                 (Signal.forwardTo address Just) 
             x)
+        handler = LowLevelHandler evalEvents msg
     in
-        [helper "touchstart" (((Touch, Start), evalEvents), msg)
-        ,helper "touchmove" (((Touch, Move), evalEvents), msg)
-        ,helper "touchleave" (((Touch, Leave), evalEvents), msg)
-        ,helper "touchend" (((Touch, End), evalEvents), msg)
-        ,helper "mousedown" (((Mouse, Start), evalEvents), msg)
-        ,helper "mousemove" (((Mouse, Move), evalEvents), msg)
-        ,helper "mouseout" (((Mouse, Leave), evalEvents), msg)
-        ,helper "mouseup" (((Mouse, End), evalEvents), msg)
+        [helper "touchstart" (handler Touch Start)
+        ,helper "touchmove" (handler Touch Move)
+        ,helper "touchleave" (handler Touch Leave)
+        ,helper "touchend" (handler Touch End)
+        ,helper "mousedown" (handler Mouse Start)
+        ,helper "mousemove" (handler Mouse Move)
+        ,helper "mouseout" (handler Mouse Leave)
+        ,helper "mouseup" (handler Mouse End)
         ]
 
 {-| Event handler function which takes an evaluation function, 
@@ -244,7 +247,7 @@ an Address of Tapbox, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.on`.
 -}
 on : EvalFunction 
-     -> Address (LowLevelHandler a) 
+     -> Address (Maybe (LowLevelHandler a))
      -> a 
      -> List Attribute
 on evalEvents address msg =

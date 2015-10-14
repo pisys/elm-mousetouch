@@ -42,7 +42,7 @@ The module exposes `on` and `onWithOptions` event handlers. Instead of the mere 
 Actually the success function completely hides the input mode of the user's device. So it is possible to model user interaction on HTML elements transparently. For instance, double click could be modelled as two mouse clicks occurring within 300 ms on the one hand and as a long tap of at least 150ms on the other hand, both patterns being evaluated within the same evaluation function. 
 
 It is possible to define own evaluation functions. 
-Look at the source of [click'](src/TapBox.elm#L265) for a complete example.
+Look at the source of [click'](src/TapBox.elm#L267) for a complete example.
 
 ## Status
 
