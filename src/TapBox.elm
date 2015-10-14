@@ -50,6 +50,9 @@ type alias TapModel a =
     , timebase : Time
     }
 
+type alias LowLevelHandler a = 
+    Maybe (((Device, Action), (PastEvents -> Bool)), a)
+
 init : TapModel a
 init = 
     { pastEvents = []
@@ -62,7 +65,7 @@ init =
 * Reset timebase and adjust past events after a time of `prune`
 -}
 update : Time 
-    -> (Time, Maybe (((Device, Action), (PastEvents -> Bool)), a)) 
+    -> (Time, LowLevelHandler a) 
     -> TapModel a 
     -> TapModel a
 update prune event model =
@@ -137,7 +140,7 @@ parseAction model =
 
 {-| A Mailbox wrapping the user defined action in Event.
 -}
-touches : a -> Signal.Mailbox (Maybe (((Device,Action), (PastEvents -> Bool)), a))
+touches : a -> Signal.Mailbox (LowLevelHandler a)
 touches a =
     Signal.mailbox Nothing
 
@@ -177,7 +180,7 @@ one).
 -}
 type alias TapBox a = 
     { signal : Signal a
-    , address : Signal.Address (Maybe (((Device, Action), (PastEvents -> Bool)), a))
+    , address : Signal.Address (LowLevelHandler a)
     }
 
 {-| Construct a TapBox given a default value of user defined type and the time
@@ -204,7 +207,7 @@ tapbox noop prune =
 a message and returns a list of `Attributes`.
 -}
 on : (PastEvents -> Bool) 
-    -> Address (Maybe (((Device,Action), (PastEvents -> Bool)), a)) 
+    -> Address (LowLevelHandler a)
     -> a 
     -> List Attribute
 on evalEvents address msg =
