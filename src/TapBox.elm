@@ -1,4 +1,4 @@
-module TapBox (TapBox, tapbox, click', click, start, diff, getTime, getSubmatch) where
+module TapBox (TapBox, tapbox, on, click', click, start, diff, getTime, getSubmatch) where
 
 {-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms
 them into "high-level" clicks, hiding the user input method of the device 
@@ -12,7 +12,7 @@ High-level events are defined as success functions which evaluate past low-level
 events.
 
 # Definition
-@docs TapBox, tapbox
+@docs TapBox, tapbox, on
 
 # Success Functions
 @docs click', click, start
@@ -28,6 +28,7 @@ import Json.Decode as Json
 import Time exposing (Time, millisecond, timestamp, second)
 import Regex exposing (..)
 import String
+import Signal exposing (Address)
 
 type Device = Mouse 
             | Touch
@@ -223,11 +224,11 @@ Event handlers wrap Html.Events.onWithOptions.
     myTapBox : TapBox Action
     myTapBox = tapbox NoOp second
 
-    view on model =
+    view address model =
       div [] 
-        [ button ( on click Decrement ) [ text "-" ]
+        [ button ( on click address Decrement ) [ text "-" ]
         , div [] [ text (toString model) ]
-        , button ( on click Increment ) [ text "+" ]
+        , button ( on click address Increment ) [ text "+" ]
         ]
 
     update action model =
@@ -235,17 +236,15 @@ Event handlers wrap Html.Events.onWithOptions.
         Increment -> model + 1
         Decrement -> model - 1
         
-    main = Signal.map (view myTapBox.on) 
+    main = Signal.map (view myTapBox.address) 
            <| Signal.foldp update 0 myTapBox.signal
 
 Note that `on` and `onWithOptions` return a List of Attributes (for each event
 one).
 -}
 type alias TapBox a = 
-    { on: ((PastEvents -> Bool) -> a -> List Attribute)
-    , onWithOptions : 
-        (Html.Events.Options -> (PastEvents -> Bool) -> a -> List Attribute)
-    , signal : Signal a
+    { signal : Signal a
+    , address : Signal.Address (Maybe (((Device, Action), (PastEvents -> Bool)), a))
     }
 
 {-| Construct a TapBox given a default value of user defined type and the time
@@ -258,34 +257,41 @@ applied to the past events.
 -}
 tapbox : a -> Time -> TapBox a
 tapbox noop prune = 
-    let mailbox = touches noop
-
-        onWithOptions options hle msg =
-            let 
-                helper event x = 
-                    Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
-                        (Signal.forwardTo mailbox.address Just) 
-                    x)
-            in
-                [helper "touchstart" (((Touch, Start), hle), msg)
-                ,helper "touchmove" (((Touch, Move), hle), msg)
-                ,helper "touchleave" (((Touch, Leave), hle), msg)
-                ,helper "touchend" (((Touch, End), hle), msg)
-                ,helper "mousedown" (((Mouse, Start), hle), msg)
-                ,helper "mousemove" (((Mouse, Move), hle), msg)
-                ,helper "mouseout" (((Mouse, Leave), hle), msg)
-                ,helper "mouseup" (((Mouse, End), hle), msg)
-                ]
+    let tMailbox = touches noop
 
     in 
-        {
-            onWithOptions = onWithOptions,
-            on = onWithOptions {stopPropagation = False, preventDefault = False},
-            signal = 
-                Signal.filterMap parseAction noop 
-                    <| Signal.foldp (update prune) init
-                    <| timestamp mailbox.signal
+        { address = tMailbox.address
+        , signal = 
+            Signal.filterMap parseAction noop 
+                <| Signal.foldp (update prune) init
+                <| timestamp tMailbox.signal
         }
+
+{-| Event handler function which takes a success function, an Address of Tapbox,
+a message and returns a list of `Attributes`.
+-}
+on : (PastEvents -> Bool) 
+    -> Address (Maybe (((Device,Action), (PastEvents -> Bool)), a)) 
+    -> a 
+    -> List Attribute
+on evalEvents address msg =
+    let 
+        options = { stopPropagation = False, preventDefault = False }
+        helper event x = 
+            Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
+                (Signal.forwardTo address Just) 
+            x)
+    in
+        [helper "touchstart" (((Touch, Start), evalEvents), msg)
+        ,helper "touchmove" (((Touch, Move), evalEvents), msg)
+        ,helper "touchleave" (((Touch, Leave), evalEvents), msg)
+        ,helper "touchend" (((Touch, End), evalEvents), msg)
+        ,helper "mousedown" (((Mouse, Start), evalEvents), msg)
+        ,helper "mousemove" (((Mouse, Move), evalEvents), msg)
+        ,helper "mouseout" (((Mouse, Leave), evalEvents), msg)
+        ,helper "mouseup" (((Mouse, End), evalEvents), msg)
+        ]
+
 
 {-| A click success function which has to be parametrized with the maximum range
 between the start and end event (ie. mousedown/mouseup or touchstart/touchend).

@@ -1,5 +1,5 @@
 import Html exposing (div, text, button)
-import TapBox exposing (TapBox, tapbox, click)
+import TapBox exposing (TapBox, tapbox, start, on)
 import Time exposing (second)
 
 type Action = Increment | Decrement | NoOp
@@ -7,11 +7,11 @@ type Action = Increment | Decrement | NoOp
 myTapBox : TapBox Action
 myTapBox = tapbox NoOp second
 
-view tapbox model =
+view address model =
   div [] 
-    [ button ( tapbox.on click Decrement ) [ text "-" ]
+    [ button ( on start address Decrement ) [ text "-" ]
     , div [] [ text (toString model) ]
-    , button ( tapbox.on click Increment ) [ text "+" ]
+    , button ( on start address Increment ) [ text "+" ]
     ]
 
 update action model =
@@ -19,6 +19,6 @@ update action model =
     Increment -> model + 1
     Decrement -> model - 1
     
-main = Signal.map (view myTapBox) 
+main = Signal.map (view myTapBox.address) 
        <| Signal.foldp update 0 myTapBox.signal
 
