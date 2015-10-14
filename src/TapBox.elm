@@ -1,4 +1,4 @@
-module TapBox (TapBox, tapbox, on, click', click, start, diff, getTime, getSubmatch) where
+module TapBox (TapBox, tapbox, on, click', click, start) where
 
 {-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms
 them into "high-level" clicks, hiding the user input method of the device 
@@ -16,9 +16,6 @@ events.
 
 # Success Functions
 @docs click', click, start
-
-# Utility stuff
-@docs getSubmatch, getTime, diff
 
 -}
 
@@ -42,7 +39,7 @@ type alias Event =
 
 {-| Past events are stored in a String and accessed with regular expressions.
 -}
-type alias PastEvents = String
+type alias PastEvents = List Event
 
 {-| TapModel represents the past of mouse/touch events. Stores them relative to
 `timebase`. Associates a success function with a user defined value.
@@ -55,7 +52,7 @@ type alias TapModel a =
 
 init : TapModel a
 init = 
-    { pastEvents = ""
+    { pastEvents = []
     , success = Nothing
     , timebase = 0
     }
@@ -83,7 +80,7 @@ update prune event model =
                 newEventTime = 
                     t - newTimebase
                 newEvent = 
-                    eventToString (fst (fst ev), newEventTime)
+                    (fst (fst ev), newEventTime)
                 success = 
                     (snd (fst ev), snd ev)
                 pruneBelow = 
@@ -92,7 +89,7 @@ update prune event model =
                     adjustPastEvents (newTimebase - model.timebase) 
                     <| pruneEvents pruneBelow model.pastEvents
             in 
-               { model | pastEvents <- newEvent ++ newPastEvents
+               { model | pastEvents <- newEvent :: newPastEvents
                        , success <- Just success
                        , timebase <- newTimebase
                }
@@ -101,61 +98,29 @@ update prune event model =
 -}
 pruneEvents : Time -> PastEvents -> PastEvents
 pruneEvents pruneBelow events =
-    if pruneBelow <= 0 then events
-       else replace All (regex "[MT][selm](\\d+)") (pruneEvent pruneBelow) events
-
-{-| Prune an event if its timestamp is below `pruneBelow`.
--}
-pruneEvent : Time -> Match -> String
-pruneEvent pruneBelow match =
-    let event = match.match
+    let 
+        fold (e,t) list =
+            if t < pruneBelow
+               then list
+               else (e,t) :: list
     in
-        case List.head match.submatches of
-            Nothing -> ""
-            Just h -> case h of
-                Nothing -> ""
-                Just t -> case String.toFloat t of
-                    Err x -> ""
-                    Ok time -> if time < pruneBelow
-                                  then ""
-                                  else event
+        if pruneBelow <= 0
+            then events
+            else 
+                List.foldr fold [] events
 
 {-| Adjust past events to a new timebase.
 -}
 adjustPastEvents : Time -> PastEvents -> PastEvents
 adjustPastEvents diffTimebase events =
-    if diffTimebase == 0 then events
-       else replace All 
-        (regex "\\d+" )
-        (adjustTime diffTimebase) 
-        events
-
-{-| Subtract `diff` from the times in a match of timestamps.
--}
-adjustTime: Time -> Match -> String
-adjustTime diff match =
-    let time = match.match
-    in case String.toFloat time of
-        Err x -> match.match
-        Ok t -> toString (t-diff)
-
-{-| Give the String representation of an Event for storing in `PastEvents`.
--}
-eventToString : Event -> String
-eventToString ((device,action),time) =
-    (deviceToString device) ++ (actionToString action) ++ (toString time)
-
-{-| Give the String representation of a Device type for storing in `PastEvents`.
--}
-deviceToString : Device -> String
-deviceToString device =
-    toString device |> String.left 1 
-
-{-| Give the String representation of an Action type for storing in `PastEvents`
--}
-actionToString : Action -> String
-actionToString action =
-    toString action |> String.left 1 |> String.toLower 
+    let
+        adjustTime (e,t) =
+            (e,t-diffTimebase)
+    in
+        if diffTimebase == 0 
+            then events
+            else 
+                List.map adjustTime events
 
 {-| Apply the success function to the past events.
 -}
@@ -167,38 +132,6 @@ parseAction model =
             if (fst s) model.pastEvents
                then Just (snd s)
                else Nothing
-
-{-| Subtract two Maybe Times. 
--}
-diff : Maybe Time -> Maybe Time -> Maybe Time
-diff t1 t2 =
-    case t1 of
-       Nothing -> Nothing
-       Just t1 -> case t2 of
-           Nothing -> Nothing
-           Just t2 -> Just (t1-t2)
-
-{-| Get a certain String from the first of Regex.find matches given its position
-in the submatches list.
--}
-getSubmatch : List Match -> Int -> Maybe String
-getSubmatch matches position =
-    let submatch = case List.head matches of
-            Nothing -> Nothing
-            Just m -> case List.head <| List.drop (position-1) m.submatches of
-                Nothing -> Nothing
-                Just h -> h
-    in submatch
-
-{-| `getSubmatch` and turn it into Time.
--}
-getTime : List Match -> Int -> Maybe Time
-getTime matches position =
-    case getSubmatch matches position of
-        Nothing -> Nothing
-        Just d -> case String.toFloat d of
-            Err x -> Nothing
-            Ok di -> Just di
 
 -- SIGNALS
 
@@ -303,45 +236,55 @@ mouse events intermingling with a fast series of touches.
 
 click' : Time -> PastEvents -> Bool
 click' maxRange events =
-    let matchTouch = 
-            find (AtMost 1) (regex
-                <| "^"
-                ++ "Te(\\d+)" 
-                    ++ "(?:" 
-                    ++ "(?:Tm\\d+)"
-                    ++ "|"
-                    ++ "(?:M.\\d+)"
-                    ++ "){0,5}"
-                ++ "Ts(\\d+)"
-            )
-            events
-        matchMouse = 
-            find (AtMost 1) (regex
-                <| "^"
-                ++ "Me(\\d+)"
-                ++ "(?:Mm\\d+){0,5}"
-                ++ "Ms(\\d+)"
-                ++ "[^T]*(?:T.(\\d+))?"
-            )
-            events
-        matches = 
-            if List.isEmpty matchTouch 
-               then matchMouse 
-               else matchTouch
+    let
+        diffTouch = 
+            case events of
+                ((Touch, End), time1) 
+                :: rest -> 
+                    case List.filter 
+                            (\((d,a),_) -> d == Touch && a /= Move) 
+                            rest of
+                        ((Touch, Start), time2) 
+                        :: rest ->
+                            Just <| time1 - time2
+                        _ -> Nothing
+                _ -> Nothing
 
-        time1 = getTime matches 1
-        time2 = getTime matches 2
-        last = getTime matches 3
+        (diffMouse,lastTouch) =
+            case events of
+                ((Mouse, End), time1) 
+                :: rest ->
+                    case List.filter 
+                            (\((d,a),_) -> d == Mouse && a /= Move) 
+                            rest of
+                        ((Mouse, Start), time2) 
+                        :: rest -> 
+                            ( Just <| time1 - time2,
+                                case List.filter
+                                        (\((d,a),_) -> d == Touch)
+                                        events of
+                                    ((Touch, _), last) 
+                                    :: rest ->
+                                        Just <| time2 - last
+                                    _ ->
+                                        Nothing
+                            )
+                        _ -> 
+                            (Nothing,Nothing)
+                _ -> 
+                    (Nothing,Nothing)
 
     in
-       case diff time1 time2 of
-           Nothing -> False
+       case diffTouch of
+           Nothing -> 
+               case (diffMouse,lastTouch) of
+                   (Just d, Nothing) -> 
+                       d < maxRange
+                   (Just d, Just l) ->
+                       d < maxRange && l > minLast
+                   _ -> False
            Just d ->
-               d < maxRange -- end has to happen within `maxRange` after start 
-       && case diff time2 last of
-           Nothing -> True
-           Just l -> 
-               l > minLast -- at least `minLast` time after 
+               d < maxRange
 
 {-| A convenient click success function in the sense of start and end happening 
 within 300 ms and not past virtual mouse event must exist within the last 700 ms
@@ -354,22 +297,30 @@ click = click' (300*millisecond)
 -}
 start : PastEvents -> Bool
 start events =
-    let match =
-        find (AtMost 1) 
-             (regex <| "^"
-                ++ "([MT])s(\\d+)"
-                ++ "[^T]*(?:T.(\\d+))?"
-             )
-             events
-        device = getSubmatch match 1
-        time = getTime match 2
-        last = case device of
-            Nothing -> Nothing
-            Just d -> if d == deviceToString Mouse
-                         then getTime match 3
-                         else Nothing
+    let 
+        (time, last) =
+            case events of
+                ((d, Start), time) 
+                :: rest ->
+                    (Just time, 
+                        if d == Mouse 
+                           then 
+                               case List.filter 
+                                        (\((d,a),_) -> d == Touch) 
+                                        rest of
+                                   ((Touch,_),last) 
+                                   :: rest ->
+                                       Just last
+                                   _ -> Nothing
+                           else 
+                               Nothing
+                   )
+                _ -> (Nothing, Nothing)
+
     in
-       if time == Nothing then False
-       else case diff time last of 
-           Nothing -> True
-           Just l -> l > minLast
+       case time of
+           Nothing -> False
+           Just t -> 
+               case Maybe.map ((-) t) last of 
+                   Nothing -> True
+                   Just l -> l > minLast
