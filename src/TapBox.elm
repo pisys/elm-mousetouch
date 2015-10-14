@@ -29,6 +29,7 @@ import Signal exposing (Address)
 
 type Device = Mouse 
             | Touch
+
 type Action = Start 
             | End 
             | Leave 
@@ -68,13 +69,10 @@ update : Time
     -> (Time, LowLevelHandler a) 
     -> TapModel a 
     -> TapModel a
-update prune event model =
-    let t = fst event
-        e = snd event
-    in
+update prune (t, e) model =
     case e of 
         Nothing -> model
-        Just ev -> 
+        Just (((device, action), evalEvents), msg) -> 
             let 
                 newTimebase = 
                     if (model.timebase + prune) < (t - prune)
@@ -83,9 +81,9 @@ update prune event model =
                 newEventTime = 
                     t - newTimebase
                 newEvent = 
-                    (fst (fst ev), newEventTime)
+                    ((device,action), newEventTime)
                 success = 
-                    (snd (fst ev), snd ev)
+                    (evalEvents, msg)
                 pruneBelow = 
                     t - model.timebase - prune
                 newPastEvents = 
