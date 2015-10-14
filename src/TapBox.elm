@@ -1,63 +1,114 @@
-module TapBox (TapBox, tapbox, on, click', click, start) where
+module TapBox 
+    ( TapBox, PastEvents, Event, Device(..), Action(..), EvalFunction
+    , tapbox, on, onWithOptions
+    , click', click, start
+    ) 
+    where
 
 {-| TapBox wraps "low-level" mouse/touch events on HTML Elements and transforms
-them into "high-level" clicks, hiding the user input method of the device 
-(mouse, touch or both) and circumventing quirks like the 300ms delay of 'click'
-events on touch devices.
+them into "high-level" events (eg. a click), hiding the user input method of 
+the device (mouse, touch or both) and circumventing quirks like the 300ms delay 
+of 'click' events on touch devices.
 
 Low-level events are mousestart, mouseend, mousemove, mouseout, touchstart,
 touchend, touchmove and touchleave.
 
-High-level events are defined as success functions which evaluate past low-level 
-events.
+High-level events are defined as evaluation functions which evaluate past 
+low-level events.
 
 # Definition
-@docs TapBox, tapbox, on
+@docs TapBox, PastEvents, Event, Device, Action, EvalFunction, tapbox
 
-# Success Functions
+# Listeners 
+@docs on, onWithOptions
+
+# Evaluation Functions
 @docs click', click, start
 
 -}
 
 import Html exposing (Attribute, text, Html, div)
-import Html.Events 
+import Html.Events exposing (onWithOptions, Options)
 import Json.Decode as Json
 import Time exposing (Time, millisecond, timestamp, second)
 import Regex exposing (..)
 import String
 import Signal exposing (Address)
 
+{-| TapModel represents the past of mouse/touch events. Stores them relative to
+`timebase`. Associates an `EvalFunction` with a user defined value.
+-}
+type alias TapModel a =
+    { pastEvents : PastEvents
+    , eval : Maybe (EvalFunction, a)
+    , timebase : Time
+    }
+
+{-| Devices.
+-}
 type Device = Mouse 
             | Touch
 
+{-| Actions.
+-}
 type Action = Start 
             | End 
             | Leave 
             | Move
 
+{-| Normalized low-level events. This type could be extended to keep coordinates as well.
+-}
 type alias Event = 
     ((Device, Action), Time)
 
-{-| Past events are stored in a String and accessed with regular expressions.
+{-| The past events are a list of `Event`s. These need to be evaluated by an `EvalFunction`.
 -}
 type alias PastEvents = List Event
 
-{-| TapModel represents the past of mouse/touch events. Stores them relative to
-`timebase`. Associates a success function with a user defined value.
+{-| TapBox functions like a Signal.Mailbox. The difference is that it exposes
+event handlers instead of an address. `signal` yields a Signal of user defined
+type given the result of the `EvalFunction`.
+
+Event handlers wrap Html.Events.onWithOptions.
+
+    type Action = Increment | Decrement | NoOp
+
+    myTapBox : TapBox Action
+    myTapBox = tapbox NoOp second
+
+    view address model =
+      div [] 
+        [ button ( on click address Decrement ) [ text "-" ]
+        , div [] [ text (toString model) ]
+        , button ( on click address Increment ) [ text "+" ]
+        ]
+
+    update action model =
+      case action of
+        Increment -> model + 1
+        Decrement -> model - 1
+        
+    main = Signal.map (view myTapBox.address) 
+           <| Signal.foldp update 0 myTapBox.signal
 -}
-type alias TapModel a =
-    { pastEvents : PastEvents
-    , success : Maybe ((PastEvents -> Bool), a)
-    , timebase : Time
+type alias TapBox a = 
+    { signal : Signal a
+    , address : Signal.Address (LowLevelHandler a)
     }
 
+{-| The evaluation function evaluates past events.
+-}
+type alias EvalFunction = (PastEvents -> Bool)
+
+{-| Combines a low-level event with an `EvalFunction` and with a user-defined message which will be send on positive evaluation of `PastEvents`.
+-}
 type alias LowLevelHandler a = 
-    Maybe (((Device, Action), (PastEvents -> Bool)), a)
+    Maybe (((Device, Action), EvalFunction), a)
 
 init : TapModel a
 init = 
     { pastEvents = []
-    , success = Nothing
+    , eval = Nothing
     , timebase = 0
     }
 
@@ -82,7 +133,7 @@ update prune (t, e) model =
                     t - newTimebase
                 newEvent = 
                     ((device,action), newEventTime)
-                success = 
+                eval = 
                     (evalEvents, msg)
                 pruneBelow = 
                     t - model.timebase - prune
@@ -91,7 +142,7 @@ update prune (t, e) model =
                     <| pruneEvents pruneBelow model.pastEvents
             in 
                { model | pastEvents <- newEvent :: newPastEvents
-                       , success <- Just success
+                       , eval <- Just eval
                        , timebase <- newTimebase
                }
 
@@ -123,70 +174,31 @@ adjustPastEvents diffTimebase events =
             else 
                 List.map adjustTime events
 
-{-| Apply the success function to the past events.
+{-| Apply the `eval` function to the past events.
 -}
-parseAction : TapModel a -> Maybe a
-parseAction model =
-    case model.success of
+evaluate : TapModel a -> Maybe a
+evaluate model =
+    case model.eval of
         Nothing -> Nothing
-        Just s -> 
-            if (fst s) model.pastEvents
-               then Just (snd s)
+        Just (evalFunction, msg) -> 
+            if evalFunction model.pastEvents
+               then Just msg
                else Nothing
 
 -- SIGNALS
 
-{-| A Mailbox wrapping the user defined action in Event.
+{-| A Mailbox wrapping the user defined action in low-level events.
 -}
 touches : a -> Signal.Mailbox (LowLevelHandler a)
 touches a =
     Signal.mailbox Nothing
-
-minLast : Time
-minLast = (700*Time.millisecond)
-
--- API
-
-{-| TapBox functions like a Signal.Mailbox. The difference is that it exposes
-event handlers instead of an address. `signal` yields a Signal of user defined
-type given the result of the success function (PastEvents -> Bool).
-
-Event handlers wrap Html.Events.onWithOptions.
-
-    type Action = Increment | Decrement | NoOp
-
-    myTapBox : TapBox Action
-    myTapBox = tapbox NoOp second
-
-    view address model =
-      div [] 
-        [ button ( on click address Decrement ) [ text "-" ]
-        , div [] [ text (toString model) ]
-        , button ( on click address Increment ) [ text "+" ]
-        ]
-
-    update action model =
-      case action of
-        Increment -> model + 1
-        Decrement -> model - 1
-        
-    main = Signal.map (view myTapBox.address) 
-           <| Signal.foldp update 0 myTapBox.signal
-
-Note that `on` and `onWithOptions` return a List of Attributes (for each event
-one).
--}
-type alias TapBox a = 
-    { signal : Signal a
-    , address : Signal.Address (LowLevelHandler a)
-    }
 
 {-| Construct a TapBox given a default value of user defined type and the time
 events reside in the buffer before they are pruned. 
 
 Creates an internal Signal.Mailbox and wires its address with mouse and touch
 event handlers. The signal is folded into an internal model which represents the
-past of the events within `prune` time. On any event the success function is 
+past of the events within `prune` time. On any event the evaluation function is 
 applied to the past events. 
 -}
 tapbox : a -> Time -> TapBox a
@@ -196,21 +208,22 @@ tapbox noop prune =
     in 
         { address = tMailbox.address
         , signal = 
-            Signal.filterMap parseAction noop 
+            Signal.filterMap evaluate noop 
                 <| Signal.foldp (update prune) init
                 <| timestamp tMailbox.signal
         }
 
-{-| Event handler function which takes a success function, an Address of Tapbox,
-a message and returns a list of `Attributes`.
+{-| Event handler function which takes an evaluation function, options, 
+an Address of Tapbox, a message and returns a list of `Attributes`.
+Equivalent of `Html.Events.onWithOptions`.
 -}
-on : (PastEvents -> Bool) 
-    -> Address (LowLevelHandler a)
-    -> a 
-    -> List Attribute
-on evalEvents address msg =
+onWithOptions : EvalFunction
+                -> Options
+                -> Address (LowLevelHandler a)
+                -> a 
+                -> List Attribute
+onWithOptions evalEvents options address msg =
     let 
-        options = { stopPropagation = False, preventDefault = False }
         helper event x = 
             Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
                 (Signal.forwardTo address Just) 
@@ -226,8 +239,22 @@ on evalEvents address msg =
         ,helper "mouseup" (((Mouse, End), evalEvents), msg)
         ]
 
+{-| Event handler function which takes an evaluation function, 
+an Address of Tapbox, a message and returns a list of `Attributes`.
+Equivalent of `Html.Events.on`.
+-}
+on : EvalFunction 
+     -> Address (LowLevelHandler a) 
+     -> a 
+     -> List Attribute
+on evalEvents address msg =
+    let 
+        options = { stopPropagation = False, preventDefault = False }
+    in
+        onWithOptions evalEvents options address msg
+        
 
-{-| A click success function which has to be parametrized with the maximum range
+{-| A click evaluation function which has to be parametrized with the maximum range
 between the start and end event (ie. mousedown/mouseup or touchstart/touchend).
 
 Click searches past events for a pattern of mouseend (mousemove{0,5}) mousestart
@@ -235,8 +262,8 @@ or touchend (touchmove|mouseevent){0|5} touchstart. The latter ignores virtual
 mouse events intermingling with a fast series of touches.
 -}
 
-click' : Time -> PastEvents -> Bool
-click' maxRange events =
+click' : Time -> Time -> PastEvents -> Bool
+click' maxRange minLast events =
     let
         diffTouch = 
             case events of
@@ -287,17 +314,18 @@ click' maxRange events =
            Just d ->
                d < maxRange
 
-{-| A convenient click success function in the sense of start and end happening 
+{-| A convenient click evaluation function in the sense of start and end happening 
 within 300 ms and not past virtual mouse event must exist within the last 700 ms
 -}
-click : PastEvents -> Bool
-click = click' (300*millisecond)
+click : EvalFunction
+click = 
+    click' (300*millisecond) (700*millisecond)
 
-{-| A simple mousestart/touchstart success function. If you want a maximum of 
-    responsiveness.
+{-| A simple mousestart/touchstart evaluation function. Takes the minimum time distance 
+to the last mouse event. 
 -}
-start : PastEvents -> Bool
-start events =
+start' : Time -> PastEvents -> Bool
+start' minLast events =
     let 
         (time, last) =
             case events of
@@ -325,3 +353,10 @@ start events =
                case Maybe.map ((-) t) last of 
                    Nothing -> True
                    Just l -> l > minLast
+
+{-| A wrapper around `start'` configured with 700 milliseconds distance to last 
+mouse event.
+-}
+start : EvalFunction
+start =
+    start' (700*millisecond) 

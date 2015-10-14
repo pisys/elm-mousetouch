@@ -1,5 +1,5 @@
 {
-    "version": "0.1.0",
+    "version": "1.0.0",
     "summary": "Unify touch/mouse events on HTML elements into a user defined signal",
     "repository": "https://github.com/pisys/elm-tapbox.git",
     "license": "BSD3",
