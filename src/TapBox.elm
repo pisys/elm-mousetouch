@@ -34,6 +34,8 @@ import Time exposing (Time, millisecond, timestamp, second)
 import Regex exposing (..)
 import String
 import Signal exposing (Address)
+import Debug
+import Native.TapBox
 
 {-| TapModel represents the past of mouse/touch events. Stores them relative to
 `timebase`. Associates an `EvalFunction` with a user defined value.
@@ -219,42 +221,29 @@ tapbox noop prune =
 an Address of Tapbox, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.onWithOptions`.
 -}
-onWithOptions : EvalFunction
+onWithOptions : String
+                -> EvalFunction
                 -> Options
-                -> Address (Maybe (LowLevelHandler a))
+                -> Address a
                 -> a 
                 -> List Attribute
-onWithOptions evalEvents options address msg =
-    let 
-        helper event x = 
-            Html.Events.onWithOptions event options Json.value (\_ -> Signal.message 
-                (Signal.forwardTo address Just) 
-            x)
-        handler = LowLevelHandler evalEvents msg
-    in
-        [helper "touchstart" (handler Touch Start)
-        ,helper "touchmove" (handler Touch Move)
-        ,helper "touchleave" (handler Touch Leave)
-        ,helper "touchend" (handler Touch End)
-        ,helper "mousedown" (handler Mouse Start)
-        ,helper "mousemove" (handler Mouse Move)
-        ,helper "mouseout" (handler Mouse Leave)
-        ,helper "mouseup" (handler Mouse End)
-        ]
+onWithOptions key evalEvents options address msg =
+    Native.TapBox.onWithOptions key evalEvents options (Signal.message address msg)
 
 {-| Event handler function which takes an evaluation function, 
 an Address of Tapbox, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.on`.
 -}
-on : EvalFunction 
-     -> Address (Maybe (LowLevelHandler a))
+on : String
+     -> EvalFunction 
+     -> Address a
      -> a 
      -> List Attribute
-on evalEvents address msg =
+on key evalEvents address msg =
     let 
         options = { stopPropagation = False, preventDefault = False }
     in
-        onWithOptions evalEvents options address msg
+        onWithOptions key evalEvents options address msg
         
 
 {-| A click evaluation function which has to be parametrized with the maximum range
@@ -269,7 +258,7 @@ click' : Time -> Time -> PastEvents -> Bool
 click' maxRange minLast events =
     let
         diffTouch = 
-            case events of
+            case Debug.log "events" events of
                 ((Touch, End), time1) 
                 :: rest -> 
                     case List.filter 
@@ -308,7 +297,7 @@ click' maxRange minLast events =
     in
        case diffTouch of
            Nothing -> 
-               case (diffMouse,lastTouch) of
+               case Debug.log "diffMouse" (diffMouse,lastTouch) of
                    (Just d, Nothing) -> 
                        d < maxRange
                    (Just d, Just l) ->
