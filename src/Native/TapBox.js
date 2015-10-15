@@ -14,22 +14,22 @@ Elm.Native.TapBox.make = function(localRuntime) {
 
     var VirtualDom = Elm.Native.VirtualDom.make(localRuntime);
     var Signal = Elm.Native.Signal.make(localRuntime);
-	var Utils = Elm.Native.Utils.make(localRuntime);
-	var List = Elm.Native.List.make(localRuntime);
-	var Json = Elm.Native.Json.make(localRuntime);
+    var Utils = Elm.Native.Utils.make(localRuntime);
+    var List = Elm.Native.List.make(localRuntime);
+    var Json = Elm.Native.Json.make(localRuntime);
 
     var that = this;
     that.pastEvents = [];
 
-    function pruneEvents(pastEvents) {
-        var pruneBelow = (new Date()).getTime() - 1000;
+    function pruneEvents(pruneBelow, pastEvents) {
+        var pruneBelowAbs = (new Date()).getTime() - pruneBelow;
         for(var i = 0; i < pastEvents.length; i++) {
-            if(pastEvents[i]._1 < pruneBelow) break;
+            if(pastEvents[i]._1 < pruneBelowAbs) break;
         }
         return pastEvents.slice(0, i);
     }
 
-    function on(evalFunction, options, decoder, createMessage) {
+    function on(evalFunction, options, pruneBelow, decoder, createMessage) {
         that.pastEvents = that.pastEvents || [];
         function eventHandler(lle, event) {
             if (options.stopPropagation)
@@ -42,7 +42,7 @@ Elm.Native.TapBox.make = function(localRuntime) {
             }
             that.pastEvents.unshift(Utils.Tuple2(lle, (new Date()).getTime()));
 
-            that.pastEvents = pruneEvents(that.pastEvents);
+            that.pastEvents = pruneEvents(pruneBelow, that.pastEvents);
 
             if( evalFunction(List.fromArray(that.pastEvents)) ) {
                 var value = A2(Json.runDecoderValue, decoder, event);
@@ -114,6 +114,6 @@ Elm.Native.TapBox.make = function(localRuntime) {
     }
 
     return Elm.Native.TapBox.values = {
-        on : F4(on)
+        on : F5(on)
     };
 }

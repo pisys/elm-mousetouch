@@ -29,7 +29,7 @@ low-level events.
 
 import Html exposing (Attribute)
 import Html.Events exposing (onWithOptions, Options, defaultOptions)
-import Time exposing (Time, millisecond)
+import Time exposing (Time, millisecond, second)
 import Signal exposing (Address)
 import Debug
 import Json.Decode as Json
@@ -59,21 +59,21 @@ type alias PastEvents = List Event
 -}
 type alias EvalFunction = (PastEvents -> Bool)
 
-messageOn : EvalFunction -> Signal.Address a -> a -> List Attribute
-messageOn eval addr msg =
-  on eval Json.value (\_ -> Signal.message addr msg)
+messageOn : EvalFunction -> Time -> Signal.Address a -> a -> List Attribute
+messageOn eval pruneBelow addr msg =
+  on eval pruneBelow Json.value (\_ -> Signal.message addr msg)
 
 {-|-}
 onClick : Signal.Address a -> a -> List Attribute
 onClick =
-  messageOn click
+  messageOn click second
 
-{-| Event handler function which takes an evaluation function, options, 
-an Address, a message and returns a list of `Attributes`.
+{-| Same as `on` but you can set a few options.
 Equivalent of `Html.Events.onWithOptions`.
 -}
 onWithOptions : EvalFunction
                 -> Options
+                -> Time
                 -> Json.Decoder a
                 -> (a -> Signal.Message)
                 -> List Attribute
@@ -81,15 +81,18 @@ onWithOptions =
     Native.TapBox.on
 
 {-| Event handler function which takes an evaluation function, 
-an Address of Tapbox, a message and returns a list of `Attributes`.
+the time how long low-level events shall be kept for evaluation, a decoder,
+and a message creating function for the decoded valued.
+Returns a list of `Attribute`s.
 Equivalent of `Html.Events.on`.
 -}
 on : EvalFunction 
+     -> Time
      -> Json.Decoder a
      -> (a -> Signal.Message)
      -> List Attribute
-on eval decoder toMessage =
-    Native.TapBox.on eval defaultOptions decoder toMessage
+on eval pruneBelow decoder toMessage =
+    Native.TapBox.on eval defaultOptions pruneBelow decoder toMessage
         
 
 {-| A click evaluation function which has to be parametrized with the maximum range
