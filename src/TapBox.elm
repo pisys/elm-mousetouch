@@ -1,7 +1,7 @@
 module TapBox 
-    ( TapBox, PastEvents, Event, Device(..), Action(..), EvalFunction
-    , tapbox, on, onWithOptions
-    , click', click, start
+    ( PastEvents, Event, Device(..), Action(..), EvalFunction
+    , on, onWithOptions
+    , click', click, start', start
     ) 
     where
 
@@ -27,24 +27,12 @@ low-level events.
 
 -}
 
-import Html exposing (Attribute, text, Html, div)
+import Html exposing (Attribute)
 import Html.Events exposing (onWithOptions, Options)
-import Json.Decode as Json
-import Time exposing (Time, millisecond, timestamp, second)
-import Regex exposing (..)
-import String
+import Time exposing (Time, millisecond)
 import Signal exposing (Address)
 import Debug
 import Native.TapBox
-
-{-| TapModel represents the past of mouse/touch events. Stores them relative to
-`timebase`. Associates an `EvalFunction` with a user defined value.
--}
-type alias TapModel a =
-    { pastEvents : PastEvents
-    , eval : Maybe (EvalFunction, a)
-    , timebase : Time
-    }
 
 {-| Devices.
 -}
@@ -66,159 +54,14 @@ type alias Event = ((Device, Action), Time)
 -}
 type alias PastEvents = List Event
 
-{-| TapBox functions like a Signal.Mailbox. The difference is that it exposes
-event handlers instead of an address. `signal` yields a Signal of user defined
-type given the result of the `EvalFunction`.
-
-Event handlers wrap Html.Events.onWithOptions.
-
-    type Action = Increment | Decrement | NoOp
-
-    myTapBox : TapBox Action
-    myTapBox = tapbox NoOp second
-
-    view address model =
-      div [] 
-        [ button ( on click address Decrement ) [ text "-" ]
-        , div [] [ text (toString model) ]
-        , button ( on click address Increment ) [ text "+" ]
-        ]
-
-    update action model =
-      case action of
-        Increment -> model + 1
-        Decrement -> model - 1
-        
-    main = Signal.map (view myTapBox.address) 
-           <| Signal.foldp update 0 myTapBox.signal
--}
-type alias TapBox a = 
-    { signal : Signal a
-    , address : Signal.Address (Maybe (LowLevelHandler a))
-    }
-
 {-| The evaluation function evaluates past events.
 -}
 type alias EvalFunction = (PastEvents -> Bool)
 
-{-| Combines a normalized low-level event with an `EvalFunction` and with a 
-user-defined message which will be send on positive evaluation of `PastEvents`.
--}
-type alias LowLevelHandler a = 
-        { eval : EvalFunction
-        , msg : a
-        , device : Device
-        , action : Action
-        }
-
-init : TapModel a
-init = 
-    { pastEvents = []
-    , eval = Nothing
-    , timebase = 0
-    }
-
-{-| Update the TapModel with the incoming event.
-* Prune events older than `prune`
-* Reset timebase and adjust past events after a time of `prune`
--}
-update : Time 
-    -> (Time, Maybe (LowLevelHandler a))
-    -> TapModel a 
-    -> TapModel a
-update prune (t, e) model =
-    case e of 
-        Nothing -> model
-        Just {device, action, eval, msg} -> 
-            let 
-                newTimebase = 
-                    if (model.timebase + prune) < (t - prune)
-                        then t - prune
-                        else model.timebase
-                newEventTime = 
-                    t - newTimebase
-                newEvent = 
-                    ((device, action), newEventTime)
-                pruneBelow = 
-                    t - model.timebase - prune
-                newPastEvents = 
-                    adjustPastEvents (newTimebase - model.timebase) 
-                    <| pruneEvents pruneBelow model.pastEvents
-            in 
-               { model | pastEvents <- newEvent :: newPastEvents
-                       , eval <- Just (eval, msg)
-                       , timebase <- newTimebase
-               }
-
-{-| Prune past events below `pruneBelow`.
--}
-pruneEvents : Time -> PastEvents -> PastEvents
-pruneEvents pruneBelow events =
-    let 
-        fold (e,t) list =
-            if t < pruneBelow
-               then list
-               else (e,t) :: list
-    in
-        if pruneBelow <= 0
-            then events
-            else 
-                List.foldr fold [] events
-
-{-| Adjust past events to a new timebase.
--}
-adjustPastEvents : Time -> PastEvents -> PastEvents
-adjustPastEvents diffTimebase events =
-    let
-        adjustTime (e,t) =
-            ( e, t - diffTimebase )
-    in
-        if diffTimebase == 0 
-            then events
-            else 
-                List.map adjustTime events
-
-{-| Apply the `eval` function to the past events.
--}
-evaluate : TapModel a -> Maybe a
-evaluate model =
-    case model.eval of
-        Nothing -> Nothing
-        Just (evalFunction, msg) -> 
-            if evalFunction model.pastEvents
-               then Just msg
-               else Nothing
-
 -- SIGNALS
 
-{-| A Mailbox wrapping the user defined action in low-level events.
--}
-touches : a -> Signal.Mailbox (Maybe (LowLevelHandler a))
-touches a =
-    Signal.mailbox Nothing
-
-{-| Construct a TapBox given a default value of user defined type and the time
-events reside in the buffer before they are pruned. 
-
-Creates an internal Signal.Mailbox and wires its address with mouse and touch
-event handlers. The signal is folded into an internal model which represents the
-past of the events within `prune` time. On any event the evaluation function is 
-applied to the past events. 
--}
-tapbox : a -> Time -> TapBox a
-tapbox noop prune = 
-    let tMailbox = touches noop
-
-    in 
-        { address = tMailbox.address
-        , signal = 
-            Signal.filterMap evaluate noop 
-                <| Signal.foldp (update prune) init
-                <| timestamp tMailbox.signal
-        }
-
 {-| Event handler function which takes an evaluation function, options, 
-an Address of Tapbox, a message and returns a list of `Attributes`.
+an Address, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.onWithOptions`.
 -}
 onWithOptions : EvalFunction

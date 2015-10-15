@@ -30,9 +30,7 @@ Elm.Native.TapBox.make = function(localRuntime) {
 
     function onWithOptions(evalFunction, options, message) {
         that.pastEvents = that.pastEvents || [];
-        console.log("enter", that.pastEvents);
         function eventHandler(lle, event) {
-            console.log('event', event);
             if (options.stopPropagation)
             {
                 event.stopPropagation();
