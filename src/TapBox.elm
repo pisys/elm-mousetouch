@@ -221,29 +221,27 @@ tapbox noop prune =
 an Address of Tapbox, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.onWithOptions`.
 -}
-onWithOptions : String
-                -> EvalFunction
+onWithOptions : EvalFunction
                 -> Options
                 -> Address a
                 -> a 
                 -> List Attribute
-onWithOptions key evalEvents options address msg =
-    Native.TapBox.onWithOptions key evalEvents options (Signal.message address msg)
+onWithOptions evalEvents options address msg =
+    Native.TapBox.onWithOptions evalEvents options (Signal.message address msg)
 
 {-| Event handler function which takes an evaluation function, 
 an Address of Tapbox, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.on`.
 -}
-on : String
-     -> EvalFunction 
+on : EvalFunction 
      -> Address a
      -> a 
      -> List Attribute
-on key evalEvents address msg =
+on evalEvents address msg =
     let 
         options = { stopPropagation = False, preventDefault = False }
     in
-        onWithOptions key evalEvents options address msg
+        onWithOptions evalEvents options address msg
         
 
 {-| A click evaluation function which has to be parametrized with the maximum range

@@ -18,7 +18,7 @@ Elm.Native.TapBox.make = function(localRuntime) {
 	var List = Elm.Native.List.make(localRuntime);
 
     var that = this;
-    that.pastEvents = {};
+    that.pastEvents = [];
 
     function pruneEvents(pastEvents) {
         var pruneBelow = (new Date()).getTime() - 1000;
@@ -28,8 +28,8 @@ Elm.Native.TapBox.make = function(localRuntime) {
         return pastEvents.slice(0, i);
     }
 
-    function onWithOptions(key, evalFunction, options, message) {
-        that.pastEvents[key] = that.pastEvents[key] || [];
+    function onWithOptions(evalFunction, options, message) {
+        that.pastEvents = that.pastEvents || [];
         console.log("enter", that.pastEvents);
         function eventHandler(lle, event) {
             console.log('event', event);
@@ -41,11 +41,11 @@ Elm.Native.TapBox.make = function(localRuntime) {
             {
                 event.preventDefault();
             }
-            that.pastEvents[key].unshift(Utils.Tuple2(lle, (new Date()).getTime()));
+            that.pastEvents.unshift(Utils.Tuple2(lle, (new Date()).getTime()));
 
-            that.pastEvents[key] = pruneEvents(that.pastEvents[key]);
+            that.pastEvents = pruneEvents(that.pastEvents);
 
-            if( evalFunction(List.fromArray(that.pastEvents[key])) ) {
+            if( evalFunction(List.fromArray(that.pastEvents)) ) {
                 Signal.sendMessage(message);
             }
         }
@@ -111,6 +111,6 @@ Elm.Native.TapBox.make = function(localRuntime) {
     }
 
     return Elm.Native.TapBox.values = {
-        onWithOptions : F4(onWithOptions)
+        onWithOptions : F3(onWithOptions)
     };
 }
