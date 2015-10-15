@@ -1,6 +1,6 @@
 module TapBox 
     ( PastEvents, Event, Device(..), Action(..), EvalFunction
-    , on, onWithOptions
+    , on, onWithOptions, onClick
     , click', click, start', start
     ) 
     where
@@ -17,21 +17,22 @@ High-level events are defined as evaluation functions which evaluate past
 low-level events.
 
 # Definition
-@docs TapBox, PastEvents, Event, Device, Action, EvalFunction, tapbox
+@docs PastEvents, Event, Device, Action, EvalFunction
 
 # Listeners 
-@docs on, onWithOptions
+@docs on, onWithOptions, onClick
 
 # Evaluation Functions
-@docs click', click, start
+@docs click', click, start, start'
 
 -}
 
 import Html exposing (Attribute)
-import Html.Events exposing (onWithOptions, Options)
+import Html.Events exposing (onWithOptions, Options, defaultOptions)
 import Time exposing (Time, millisecond)
 import Signal exposing (Address)
 import Debug
+import Json.Decode as Json
 import Native.TapBox
 
 {-| Devices.
@@ -58,7 +59,14 @@ type alias PastEvents = List Event
 -}
 type alias EvalFunction = (PastEvents -> Bool)
 
--- SIGNALS
+messageOn : EvalFunction -> Signal.Address a -> a -> List Attribute
+messageOn eval addr msg =
+  on eval Json.value (\_ -> Signal.message addr msg)
+
+{-|-}
+onClick : Signal.Address a -> a -> List Attribute
+onClick =
+  messageOn click
 
 {-| Event handler function which takes an evaluation function, options, 
 an Address, a message and returns a list of `Attributes`.
@@ -66,25 +74,22 @@ Equivalent of `Html.Events.onWithOptions`.
 -}
 onWithOptions : EvalFunction
                 -> Options
-                -> Address a
-                -> a 
+                -> Json.Decoder a
+                -> (a -> Signal.Message)
                 -> List Attribute
-onWithOptions evalEvents options address msg =
-    Native.TapBox.onWithOptions evalEvents options (Signal.message address msg)
+onWithOptions =
+    Native.TapBox.on
 
 {-| Event handler function which takes an evaluation function, 
 an Address of Tapbox, a message and returns a list of `Attributes`.
 Equivalent of `Html.Events.on`.
 -}
 on : EvalFunction 
-     -> Address a
-     -> a 
+     -> Json.Decoder a
+     -> (a -> Signal.Message)
      -> List Attribute
-on evalEvents address msg =
-    let 
-        options = { stopPropagation = False, preventDefault = False }
-    in
-        onWithOptions evalEvents options address msg
+on eval decoder toMessage =
+    Native.TapBox.on eval defaultOptions decoder toMessage
         
 
 {-| A click evaluation function which has to be parametrized with the maximum range

@@ -1,14 +1,15 @@
 import Html exposing (div, text, button)
-import TapBox exposing (click, on)
+import TapBox exposing (onClick)
 import Time exposing (second)
+import Json.Decode as Json
 
 type Action = Increment | Decrement | NoOp
 
 view address model =
   div [] 
-    [ button ( on click address Decrement ) [ text "-" ]
+    [ button ( onClick address Decrement ) [ text "-" ]
     , div [] [ text (toString model) ]
-    , button ( on click address Increment ) [ text "+" ]
+    , button ( onClick address Increment ) [ text "+" ]
     ]
 
 

@@ -16,6 +16,7 @@ Elm.Native.TapBox.make = function(localRuntime) {
     var Signal = Elm.Native.Signal.make(localRuntime);
 	var Utils = Elm.Native.Utils.make(localRuntime);
 	var List = Elm.Native.List.make(localRuntime);
+	var Json = Elm.Native.Json.make(localRuntime);
 
     var that = this;
     that.pastEvents = [];
@@ -28,7 +29,7 @@ Elm.Native.TapBox.make = function(localRuntime) {
         return pastEvents.slice(0, i);
     }
 
-    function onWithOptions(evalFunction, options, message) {
+    function on(evalFunction, options, decoder, createMessage) {
         that.pastEvents = that.pastEvents || [];
         function eventHandler(lle, event) {
             if (options.stopPropagation)
@@ -44,7 +45,11 @@ Elm.Native.TapBox.make = function(localRuntime) {
             that.pastEvents = pruneEvents(that.pastEvents);
 
             if( evalFunction(List.fromArray(that.pastEvents)) ) {
-                Signal.sendMessage(message);
+                var value = A2(Json.runDecoderValue, decoder, event);
+                if (value.ctor === 'Ok')
+                {
+                    Signal.sendMessage(createMessage(value._0));
+                }
             }
         }
         return List.fromArray(
@@ -109,6 +114,6 @@ Elm.Native.TapBox.make = function(localRuntime) {
     }
 
     return Elm.Native.TapBox.values = {
-        onWithOptions : F3(onWithOptions)
+        on : F4(on)
     };
 }
