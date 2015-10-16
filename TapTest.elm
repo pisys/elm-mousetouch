@@ -2,7 +2,7 @@ import Html exposing (div, text, button)
 import Html.Attributes exposing (class)
 import Html.Events exposing (defaultOptions)
 import MouseTouch exposing (on, onMultiple)
-import MouseTouch.Eval exposing (onClick, swipeDown, swipeUp)
+import MouseTouch.Eval exposing (onClick, swipeDown, swipeUp, swipeLeft, swipeRight)
 import Time exposing (second)
 import Json.Decode as Json
 
@@ -10,16 +10,19 @@ type Action = Increment | Decrement | Reset | NoOp
 
 view address model =
       div 
-        ( class "frame"
-        :: ( onMultiple
-                [ { eval = swipeUp 
+        [ class "frame" ]
+        [ button ( onClick "TapTest.Increment" address Increment ) [ text "+" ]
+        , div 
+            ( class "counter" 
+            :: ( onMultiple
+                [ { eval = swipeRight
                   , options = defaultOptions
                   , pruneBelow = (second/2) 
                   , key = "TapTest.Swipe.Increment" 
                   , decoder = Json.value 
                   , toMessage = (\_ -> Signal.message address Increment )
                   }
-                , { eval = swipeDown
+                , { eval = swipeLeft
                   , options = defaultOptions
                   , pruneBelow = (second/2) 
                   , key = "TapTest.Swipe.Decrement" 
@@ -27,11 +30,10 @@ view address model =
                   , toMessage = (\_ -> Signal.message address Decrement )
                   }
                 ]
+               ) 
            )
-        )
-        [ button [] {-( onClick "TapTest.Decrement" address Decrement )-} [ text "-" ]
-        , div [ class "counter" ] [ text (toString model) ]
-        , button [] {-( onClick "TapTest.Increment" address Increment )-} [ text "+" ]
+           [ text (toString model) ]
+        , button ( onClick "TapTest.Decrement" address Decrement ) [ text "-" ]
         ]
 
 

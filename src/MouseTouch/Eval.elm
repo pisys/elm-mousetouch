@@ -193,10 +193,11 @@ swipeRight events =
             in
                 (xnew, newSmaller)
     in
-        case List.filter (\((d,_),_) -> d == Touch) events of
+        case events of
             ((Touch,End),(_,(xend,yend))) 
             :: rest -> 
-                case List.foldl xSmaller (9999999,True) rest of 
+                case List.foldl xSmaller (9999999,True) 
+                        <| List.filter (\((d,_),_) -> d == Touch) rest of 
                     (_, True) ->
                         case List.filter (\((_,a),_) -> a == Start) rest of
                             ((Touch,Start),(_,(xstart,ystart)))
@@ -221,10 +222,11 @@ swipeLeft events =
             in
                 (xnew, newSmaller)
     in
-        case List.filter (\((d,_),_) -> d == Touch) events of
+        case events of
             ((Touch,End),(_,(xend,yend))) 
             :: rest -> 
-                case List.foldl xBigger (-1,True) rest of 
+                case List.foldl xBigger (-1,True) 
+                        <| List.filter (\((d,_),_) -> d == Touch) rest of 
                     (_, True) ->
                         case List.filter (\((_,a),_) -> a == Start) rest of
                             ((Touch,Start),(_,(xstart,ystart)))
