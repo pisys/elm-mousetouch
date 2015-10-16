@@ -1,4 +1,4 @@
-# elm-tapbox
+# elm-mousetouch
 Unify touch/mouse events on HTML elements into a user defined signal.
 
 ## Problem
