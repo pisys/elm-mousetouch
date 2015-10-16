@@ -123,8 +123,8 @@ start =
 
 {-| Evaluating swiping down gesture (touch only)
 -}
-swipeDown : EvalFunction
-swipeDown events = 
+swipeDown : Int -> Int -> EvalFunction
+swipeDown tolerance minSwipeDistance events = 
     let 
         ySmaller ((_,action),(_,(_,ynew))) (yold, wasSmaller) =
             let 
@@ -144,16 +144,16 @@ swipeDown events =
                         case List.filter (\((_,a),_) -> a == Start) rest of
                             ((Touch,Start),(_,(xstart,ystart)))
                             :: rest -> 
-                                abs (xstart - xend) < 50
-                                && abs (ystart - yend) > 50
+                                abs (xstart - xend) < tolerance
+                                && abs (ystart - yend) > minSwipeDistance
                             _ -> False
                     (_, False) -> False
             _ -> False
 
-{-| Evaluating swiping down gesture (touch only)
+{-| Evaluating swiping up gesture (touch only)
 -}
-swipeUp : EvalFunction
-swipeUp events = 
+swipeUp : Int -> Int -> EvalFunction
+swipeUp tolerance minSwipeDistance events = 
     let 
         yBigger ((_,action),(_,(_,ynew))) (yold, wasSmaller) =
             let 
@@ -173,16 +173,16 @@ swipeUp events =
                         case List.filter (\((_,a),_) -> a == Start) rest of
                             ((Touch,Start),(_,(xstart,ystart)))
                             :: rest -> 
-                                abs (xstart - xend) < 50
-                                && abs (ystart - yend) > 50
+                                abs (xstart - xend) < tolerance
+                                && abs (ystart - yend) > minSwipeDistance
                             _ -> False
                     (_, False) -> False
             _ -> False
 
-{-| Evaluating swiping down gesture (touch only)
+{-| Evaluating swiping right gesture (touch only)
 -}
-swipeRight : EvalFunction
-swipeRight events = 
+swipeRight : Int -> Int -> EvalFunction
+swipeRight tolerance minSwipeDistance events = 
     let 
         xSmaller ((_,action),(_,(xnew,_))) (xold, wasSmaller) =
             let 
@@ -202,16 +202,16 @@ swipeRight events =
                         case List.filter (\((_,a),_) -> a == Start) rest of
                             ((Touch,Start),(_,(xstart,ystart)))
                             :: rest -> 
-                                abs (xstart - xend) > 50
-                                && abs (ystart - yend) < 50
+                                abs (xstart - xend) > tolerance
+                                && abs (ystart - yend) < minSwipeDistance
                             _ -> False
                     (_, False) -> False
             _ -> False
 
-{-| Evaluating swiping down gesture (touch only)
+{-| Evaluating swiping left gesture (touch only)
 -}
-swipeLeft : EvalFunction
-swipeLeft events = 
+swipeLeft : Int -> Int -> EvalFunction
+swipeLeft tolerance minSwipeDistance events = 
     let 
         xBigger ((_,action),(_,(xnew,_))) (xold, wasSmaller) =
             let 
@@ -231,8 +231,8 @@ swipeLeft events =
                         case List.filter (\((_,a),_) -> a == Start) rest of
                             ((Touch,Start),(_,(xstart,ystart)))
                             :: rest -> 
-                                abs (xstart - xend) > 50
-                                && abs (ystart - yend) < 50
+                                abs (xstart - xend) > tolerance
+                                && abs (ystart - yend) < minSwipeDistance
                             _ -> False
                     (_, False) -> False
             _ -> False

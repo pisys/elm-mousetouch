@@ -15,14 +15,14 @@ view address model =
         , div 
             ( class "counter" 
             :: ( onMultiple
-                [ { eval = swipeRight
+                [ { eval = (swipeRight 50 50)
                   , options = defaultOptions
                   , pruneBelow = (second/2) 
                   , key = "TapTest.Swipe.Increment" 
                   , decoder = Json.value 
                   , toMessage = (\_ -> Signal.message address Increment )
                   }
-                , { eval = swipeLeft
+                , { eval = (swipeLeft 50 50)
                   , options = defaultOptions
                   , pruneBelow = (second/2) 
                   , key = "TapTest.Swipe.Decrement" 
