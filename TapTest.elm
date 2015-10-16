@@ -11,7 +11,7 @@ type Action = Increment | Decrement | NoOp
 view address model =
       div 
         [ class "frame" ]
-        [ div []
+        [ div [ class "info" ]
             [ text "Tap or click the buttons or swipe left/right over the counter" ]
         , button ( onClick "TapTest.Increment" address Increment ) [ text "+" ]
         , div 
@@ -43,7 +43,6 @@ update action model =
   case action of
     Increment -> model + 1
     Decrement -> model - 1
-    Reset -> 0
 
 actions = Signal.mailbox NoOp
     
