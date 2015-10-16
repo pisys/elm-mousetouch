@@ -62,9 +62,9 @@ type alias EvalFunction = (PastEvents -> Bool)
 {-| Event handler function which takes an evaluation function, 
 the time how long low-level events shall be kept for evaluation, 
 a key by which low-level events will be grouped, a decoder,
-and a message creating function for the decoded valued.
-Returns a list of `Attribute`s.
-Equivalent of `Html.Events.on`.
+and a message creating function for the decoded value.
+Returns a list of `Attribute`s (one for each low-level event).
+Analogous to `Html.Events.on`.
 -}
 on : EvalFunction 
      -> Time
@@ -76,7 +76,7 @@ on eval pruneBelow key decoder toMessage =
     Native.MouseTouch.on eval defaultOptions pruneBelow key decoder toMessage
 
 {-| Same as `on` but you can set a few options.
-Equivalent of `Html.Events.onWithOptions`.
+Analogous to `Html.Events.onWithOptions`.
 -}
 onWithOptions : EvalFunction
                 -> Options

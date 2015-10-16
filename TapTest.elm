@@ -6,12 +6,14 @@ import MouseTouch.Eval exposing (onClick, swipeDown, swipeUp, swipeLeft, swipeRi
 import Time exposing (second)
 import Json.Decode as Json
 
-type Action = Increment | Decrement | Reset | NoOp
+type Action = Increment | Decrement | NoOp
 
 view address model =
       div 
         [ class "frame" ]
-        [ button ( onClick "TapTest.Increment" address Increment ) [ text "+" ]
+        [ div []
+            [ text "Tap or click the buttons or swipe left/right over the counter" ]
+        , button ( onClick "TapTest.Increment" address Increment ) [ text "+" ]
         , div 
             ( class "counter" 
             :: ( onMultiple
