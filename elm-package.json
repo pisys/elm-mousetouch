@@ -1,13 +1,14 @@
 {
     "version": "1.0.0",
     "summary": "Unify touch/mouse events on HTML elements into a user defined signal",
-    "repository": "https://github.com/pisys/elm-tapbox.git",
+    "repository": "https://github.com/pisys/elm-mousetouch.git",
     "license": "BSD3",
     "source-directories": [
         "src"
     ],
     "exposed-modules": [
-        "TapBox"
+        "MouseTouch",
+        "MouseTouch.Eval"
     ],
     "dependencies": {
         "elm-lang/core": "2.1.0 <= v < 3.0.0",

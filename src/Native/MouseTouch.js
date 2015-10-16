@@ -1,15 +1,15 @@
-Elm.Native.TapBox = {};
-Elm.Native.TapBox.make = function(localRuntime) {
+Elm.Native.MouseTouch = {};
+Elm.Native.MouseTouch.make = function(localRuntime) {
 
     localRuntime.Native = localRuntime.Native || {};
-    localRuntime.Native.TapBox = localRuntime.Native.TapBox || {};
-    if (localRuntime.Native.TapBox.values)
+    localRuntime.Native.MouseTouch = localRuntime.Native.MouseTouch || {};
+    if (localRuntime.Native.MouseTouch.values)
     {
-        return localRuntime.Native.TapBox.values;
+        return localRuntime.Native.MouseTouch.values;
     }
-    if ('values' in Elm.Native.TapBox)
+    if ('values' in Elm.Native.MouseTouch)
     {
-        return localRuntime.Native.TapBox.values = Elm.Native.TapBox.values;
+        return localRuntime.Native.MouseTouch.values = Elm.Native.MouseTouch.values;
     }
 
     var VirtualDom = Elm.Native.VirtualDom.make(localRuntime);
@@ -19,18 +19,44 @@ Elm.Native.TapBox.make = function(localRuntime) {
     var Json = Elm.Native.Json.make(localRuntime);
 
     var that = this;
-    that.pastEvents = [];
+    that.pastEvents = {};
 
     function pruneEvents(pruneBelow, pastEvents) {
         var pruneBelowAbs = (new Date()).getTime() - pruneBelow;
         for(var i = 0; i < pastEvents.length; i++) {
-            if(pastEvents[i]._1 < pruneBelowAbs) break;
+            if(pastEvents[i]._1._0 < pruneBelowAbs) break;
         }
         return pastEvents.slice(0, i);
     }
 
-    function on(evalFunction, options, pruneBelow, decoder, createMessage) {
-        that.pastEvents = that.pastEvents || [];
+    function getCoords(event) {
+        var x,y;
+        switch (event.type.substr(0,5)) {
+            case "mouse":
+                x = event.clientX;
+                y = event.clientY;
+                break;
+            case "touch":
+                switch (event.type.substr(5)) {
+                    case "end" :
+                        x = event.changedTouches[0].clientX;
+                        y = event.changedTouches[0].clientY;
+                        break;
+                    default:
+                        x = event.touches[0].clientX;
+                        y = event.touches[0].clientY;
+                }
+                break;
+            default :
+                x = -1;
+                y = -1;
+        }
+
+        return Utils.Tuple2(x,y);
+    }
+
+    function on(evalFunction, options, pruneBelow, key, decoder, createMessage) {
+        that.pastEvents[key] = that.pastEvents[key] || [];
         function eventHandler(lle, event) {
             if (options.stopPropagation)
             {
@@ -40,11 +66,20 @@ Elm.Native.TapBox.make = function(localRuntime) {
             {
                 event.preventDefault();
             }
-            that.pastEvents.unshift(Utils.Tuple2(lle, (new Date()).getTime()));
 
-            that.pastEvents = pruneEvents(pruneBelow, that.pastEvents);
+            var newEvent = Utils.Tuple2
+                ( lle
+                , Utils.Tuple2
+                    ((new Date()).getTime()
+                    , getCoords(event)
+                    )
+                );
 
-            if( evalFunction(List.fromArray(that.pastEvents)) ) {
+            that.pastEvents[key].unshift(newEvent);
+
+            that.pastEvents[key] = pruneEvents(pruneBelow, that.pastEvents[key]);
+
+            if( evalFunction(List.fromArray(that.pastEvents[key])) ) {
                 var value = A2(Json.runDecoderValue, decoder, event);
                 if (value.ctor === 'Ok')
                 {
@@ -113,7 +148,7 @@ Elm.Native.TapBox.make = function(localRuntime) {
         );
     }
 
-    return Elm.Native.TapBox.values = {
-        on : F5(on)
+    return Elm.Native.MouseTouch.values = {
+        on : F6(on)
     };
 }
