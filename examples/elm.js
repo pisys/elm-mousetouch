@@ -4184,22 +4184,23 @@ Elm.Main.make = function (_elm) {
          {case "Decrement":
             return model - 1;
             case "Increment":
-            return model + 1;
-            case "Reset": return 0;}
+            return model + 1;}
          _U.badCase($moduleName,
-         "between lines 41 and 44");
+         "between lines 43 and 45");
       }();
    });
    var NoOp = {ctor: "NoOp"};
    var actions = $Signal.mailbox(NoOp);
-   var Reset = {ctor: "Reset"};
    var Decrement = {ctor: "Decrement"};
    var Increment = {ctor: "Increment"};
    var view = F2(function (address,
    model) {
       return A2($Html.div,
       _L.fromArray([$Html$Attributes.$class("frame")]),
-      _L.fromArray([A2($Html.button,
+      _L.fromArray([A2($Html.div,
+                   _L.fromArray([$Html$Attributes.$class("info")]),
+                   _L.fromArray([$Html.text("Tap or click the buttons or swipe left/right over the counter")]))
+                   ,A2($Html.button,
                    A3($MouseTouch$Eval.onClick,
                    "TapTest.Increment",
                    address,
@@ -4253,7 +4254,6 @@ Elm.Main.make = function (_elm) {
    _elm.Main.values = {_op: _op
                       ,Increment: Increment
                       ,Decrement: Decrement
-                      ,Reset: Reset
                       ,NoOp: NoOp
                       ,view: view
                       ,update: update
