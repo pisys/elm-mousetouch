@@ -40,7 +40,9 @@ MouseTouch is an [Elm](http://elm-lang.org) library which unifies touch and mous
 
 This example will result in instant sending of `Increment` or `Decrement` to the app's `actions.address` irrespectively of whether the user clicks or taps the button. 
 
-See any major difference? Look closer: Imported `onClick` returns a `List` of `Attribute`s and that's it! MouseTouch integrates perfectly with your architecture because its API is reduced to event handler functions. 
+Try out a demo [here](https://pisys.github.io/elm-mousetouch/examples/taptest.html) (It's [TapTest.elm](TapTest.elm) running there). View it in a browser with mobile development capabilities. E.g. in Firefox press `Ctrl+Shift+M` and enable simulation of touch events. Or just visit the page from a touch device!
+
+The only difference between `Html.Events.onClick` and `MouseTouch.onClick` is that the latter returns a `List` of `Attribute`s and that's it! MouseTouch integrates perfectly with your architecture because its API is reduced to event handler functions only. 
 
 The module exposes the following event handlers which are analogous to the respective handlers of [Html.Events](github.com/evancz/elm-html):
 * `on` for explicit combination with an evaluation function
