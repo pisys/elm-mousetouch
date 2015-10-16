@@ -1,6 +1,6 @@
 module MouseTouch
     ( PastEvents, Event, Device(..), Action(..), EvalFunction
-    , on, onWithOptions, messageOn
+    , on, onWithOptions, messageOn, onMultiple
     ) 
     where
 
@@ -19,7 +19,7 @@ low-level events.
 @docs PastEvents, Event, Device, Action, EvalFunction
 
 # Listeners 
-@docs on, onWithOptions, messageOn
+@docs on, onWithOptions, onMultiple, messageOn
 
 -}
 
@@ -87,6 +87,20 @@ onWithOptions : EvalFunction
                 -> List Attribute
 onWithOptions =
     Native.MouseTouch.on
+
+{-| For listening to more than one events patterns. Same as `on` but various configurations on the same DOM element.
+-}
+onMultiple : List 
+                { eval : EvalFunction 
+                , options : Options
+                , pruneBelow : Time
+                , key : String
+                , decoder : Json.Decoder a
+                , toMessage : (a -> Signal.Message)
+                }
+                 -> List Attribute
+onMultiple =
+    Native.MouseTouch.onMultiple 
         
 {-| Provides inputs for `Address a` and `a` and passes them on to `on` in a `a -> Message` function.
 -}

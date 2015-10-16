@@ -55,9 +55,10 @@ Elm.Native.MouseTouch.make = function(localRuntime) {
         return Utils.Tuple2(x,y);
     }
 
-    function on(evalFunction, options, pruneBelow, key, decoder, createMessage) {
+    function getEventHandler(evalFunction, options, pruneBelow, key, decoder, createMessage) {
         that.pastEvents[key] = that.pastEvents[key] || [];
-        function eventHandler(lle, event) {
+
+        return function (lle, event) {
             if (options.stopPropagation)
             {
                 event.stopPropagation();
@@ -87,68 +88,84 @@ Elm.Native.MouseTouch.make = function(localRuntime) {
                 }
             }
         }
+    }
+
+    function toList(configs) {
+        var list = [];
+        var config = configs;
+        while( config.ctor == "::" ) {
+            var eventHandler = getEventHandler(
+                                 config._0.$eval,
+                                 config._0.options,
+                                 config._0.pruneBelow,
+                                 config._0.key,
+                                 config._0.decoder,
+                                 config._0.toMessage
+                                );
+            list.push(eventHandler);
+            config = config._1;
+        }
+        return list;
+    }
+
+    function onList(list) {
+        function executeEval (e, device, action) {
+            for ( var i = 0; i < list.length; i++ ) {
+                list[i]
+                    ( Utils.Tuple2({ctor:device},{ctor:action})
+                    , e
+                    )
+            }
+        }
+
         return List.fromArray(
             [ VirtualDom.property.func("onmousedown", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Mouse"},{ctor:"Start"}), 
-                            e
-                        )
+                        executeEval(e, "Mouse", "Start");
                     })
             , VirtualDom.property.func("onmouseup", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Mouse"},{ctor:"End"}), 
-                            e
-                        )
+                        executeEval(e, "Mouse", "End");
                     })
             , VirtualDom.property.func("onmouseout", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Mouse"},{ctor:"Leave"}), 
-                            e
-                        )
+                        executeEval(e, "Mouse", "Leave");
                     })
             , VirtualDom.property.func("onmousemove", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Mouse"},{ctor:"Move"}), 
-                            e
-                        )
+                        executeEval(e, "Mouse", "Move");
                     })
             , VirtualDom.property.func("ontouchstart", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Touch"},{ctor:"Start"}), 
-                            e
-                        )
+                        executeEval(e, "Touch", "Start");
                     })
             , VirtualDom.property.func("ontouchend", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Touch"},{ctor:"End"}), 
-                            e
-                        )
+                        executeEval(e, "Touch", "End");
                     })
             , VirtualDom.property.func("ontouchleave", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Touch"},{ctor:"Leave"}), 
-                            e
-                        )
+                        executeEval(e, "Touch", "Leave");
                     })
             , VirtualDom.property.func("ontouchmove", 
                     function(e){
-                        eventHandler(
-                            Utils.Tuple2({ctor:"Touch"},{ctor:"Move"}), 
-                            e
-                        )
+                        executeEval(e, "Touch", "Move");
                     })
             ]
         );
     }
 
+    function on(evalFunction, options, pruneBelow, key, decoder, createMessage) {
+        var eventHandler = getEventHandler(evalFunction, options, pruneBelow, key, decoder, createMessage);
+        return onList([eventHandler]);
+    }
+
+    function onMultiple(configs) {
+        return onList(toList(configs));
+    }
+
     return Elm.Native.MouseTouch.values = {
-        on : F6(on)
+        on : F6(on),
+        onMultiple : onMultiple
     };
 }
