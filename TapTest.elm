@@ -43,6 +43,7 @@ update action model =
   case action of
     Increment -> model + 1
     Decrement -> model - 1
+    NoOp      -> model
 
 actions = Signal.mailbox NoOp
     
